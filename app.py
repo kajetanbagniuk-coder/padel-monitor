@@ -183,6 +183,40 @@ def api_scrape_now():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route("/api/recover-db")
+def api_recover_db():
+    """Attempt to recover a corrupted database."""
+    from database import DB_PATH
+    import sqlite3
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=10)
+        result = conn.execute("PRAGMA integrity_check").fetchone()
+        conn.close()
+        if result[0] == "ok":
+            return jsonify({"status": "ok", "message": "Database is healthy"})
+        # Corrupted — remove and reinitialize
+        logger.warning("Database corrupted, recovering...")
+        os.remove(DB_PATH)
+        for suffix in ["-wal", "-shm"]:
+            path = DB_PATH + suffix
+            if os.path.exists(path):
+                os.remove(path)
+        init_db()
+        return jsonify({"status": "ok", "message": "Database recreated"})
+    except Exception as e:
+        logger.error(f"Recovery failed, forcing recreate: {e}")
+        try:
+            os.remove(DB_PATH)
+            for suffix in ["-wal", "-shm"]:
+                path = DB_PATH + suffix
+                if os.path.exists(path):
+                    os.remove(path)
+            init_db()
+            return jsonify({"status": "ok", "message": "Database force-recreated"})
+        except Exception as e2:
+            return jsonify({"status": "error", "message": str(e2)}), 500
+
+
 @app.route("/api/daily")
 def api_daily():
     """Get daily income. ?date=YYYY-MM-DD&club=slug"""
