@@ -109,10 +109,14 @@ def api_scrape_now():
     club_slug = request.args.get("club", DEFAULT_CLUB)
     if club_slug not in CLUBS:
         return jsonify({"status": "error", "message": f"Unknown club: {club_slug}"}), 400
-    result = scrape_club(club_slug, date_str)
-    if result:
-        return jsonify({"status": "ok", "data": result})
-    return jsonify({"status": "error", "message": "Scrape failed"}), 500
+    try:
+        result = scrape_club(club_slug, date_str)
+        if result:
+            return jsonify({"status": "ok", "data": result})
+        return jsonify({"status": "error", "message": "Scrape returned no data"}), 500
+    except Exception as e:
+        logger.error(f"Scrape error for {club_slug}: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.route("/api/daily")
