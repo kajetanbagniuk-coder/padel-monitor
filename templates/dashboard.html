@@ -467,18 +467,6 @@
         <button class="btn-scrape" id="btn-scrape">Scrape Now</button>
     </div>
 
-    <!-- Club Pricing Card -->
-    <div class="club-card" id="club-card" style="display:none;">
-        <div class="club-info">
-            <div class="club-name" id="cc-name">--</div>
-            <div class="club-meta" id="cc-meta">--</div>
-            <div class="pricing-badge generic" id="cc-badge">--</div>
-        </div>
-        <div class="pricing-table" id="cc-pricing">
-            <div class="no-data">Loading pricing...</div>
-        </div>
-    </div>
-
     <div class="main">
         <!-- Daily View -->
         <div id="view-daily" class="view">
@@ -495,6 +483,17 @@
             <div class="snapshots-section">
                 <h2>Snapshots Timeline (how income grew through the day)</h2>
                 <div class="snapshot-timeline" id="snapshot-timeline"></div>
+            </div>
+            <!-- Club Pricing Card (bottom of daily view) -->
+            <div class="club-card" id="club-card" style="display:none; margin-top: 20px;">
+                <div class="club-info">
+                    <div class="club-name" id="cc-name">--</div>
+                    <div class="club-meta" id="cc-meta">--</div>
+                    <div class="pricing-badge generic" id="cc-badge">--</div>
+                </div>
+                <div class="pricing-table" id="cc-pricing">
+                    <div class="no-data">Loading pricing...</div>
+                </div>
             </div>
         </div>
 
