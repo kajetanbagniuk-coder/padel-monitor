@@ -346,9 +346,8 @@ import threading
 
 init_db()
 scheduler.start()
-logger.info("Starting background scrape of all clubs...")
-threading.Thread(target=scheduled_scrape_kluby, daemon=True).start()
-threading.Thread(target=scheduled_scrape_playtomic, daemon=True).start()
+logger.info("App started. Scraping will run on schedule (kluby: 10/18/23:40, playtomic: every :45).")
+# Only run pricing scrape on startup if table is empty (lightweight check)
 threading.Thread(target=_startup_pricing_scrape, daemon=True).start()
 
 if __name__ == "__main__":
