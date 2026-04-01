@@ -330,14 +330,24 @@ def get_playtomic_price_map(club_slug):
     return [dict(r) for r in rows]
 
 
-def save_playtomic_observations(target_date, club_slug, observations):
+def save_playtomic_observations(target_date, club_slug, observations, valid_hours=None):
     """Upsert hourly observations for a Playtomic club.
 
     observations: list of dicts with keys: court_name, hour, is_booked, price
+    valid_hours: if provided, delete stale observations outside these hours
     """
     conn = get_connection()
     c = conn.cursor()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Clean up observations for hours that aren't actually bookable
+    if valid_hours is not None:
+        placeholders = ",".join("?" * len(valid_hours))
+        c.execute(f"""
+            DELETE FROM playtomic_observations
+            WHERE target_date = ? AND club_slug = ? AND hour NOT IN ({placeholders})
+        """, (target_date, club_slug, *valid_hours))
+
     for obs in observations:
         c.execute("""
             INSERT INTO playtomic_observations (target_date, club_slug, court_name, hour, is_booked, price, observed_at)

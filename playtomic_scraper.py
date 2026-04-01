@@ -388,7 +388,8 @@ def scrape_playtomic_hourly(date_str, club_slug, clubs_dict=None):
         return None
 
     # Save observations (upsert — updates future hours, preserves past)
-    save_playtomic_observations(date_str, club_slug, observations)
+    # Pass schedule_hours to clean up any stale observations from wrong schedule
+    save_playtomic_observations(date_str, club_slug, observations, valid_hours=schedule_hours)
 
     # Rebuild daily snapshot from ALL accumulated observations
     summary = get_playtomic_daily_summary(date_str, club_slug)
