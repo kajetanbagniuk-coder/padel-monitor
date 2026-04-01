@@ -479,9 +479,10 @@ def _startup_pricing_scrape():
 
 
 def _startup_playtomic_prices():
-    """Build Playtomic price maps if not yet populated."""
+    """Build Playtomic price maps if not yet populated — deferred to avoid blocking."""
+    import time as _time
+    _time.sleep(60)  # Wait for app to stabilize before heavy DB work
     from database import get_playtomic_price_map
-    # Check if any price map exists
     test = get_playtomic_price_map("interpadel-warszawa")
     if not test:
         logger.info("Playtomic price maps empty - building from future availability...")
