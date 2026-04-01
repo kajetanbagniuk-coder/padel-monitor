@@ -74,22 +74,51 @@ def get_availability(tenant_id, date_str):
         return None
 
 
-def parse_opening_hours(tenant_info, date_str):
-    """Get opening/closing hour integers for a specific date."""
-    dt = datetime.strptime(date_str, "%Y-%m-%d")
-    day_name = dt.strftime("%A").upper()
-    hours = tenant_info.get("opening_hours", {})
-    day_hours = hours.get(day_name, hours.get("MONDAY", {"opening_time": "06:00", "closing_time": "23:00"}))
-    open_h = int(day_hours["opening_time"].split(":")[0])
-    close_h = int(day_hours["closing_time"].split(":")[0])
-    return open_h, close_h
+def get_bookable_hours(tenant_id, day_type):
+    """Determine actual bookable hours by checking a future date with lots of availability.
+
+    Uses next Wednesday for weekday, next Saturday for weekend.
+    The hours that appear as available across ALL courts = the real bookable range.
+    """
+    today = datetime.now()
+    if day_type == "weekday":
+        days_ahead = (2 - today.weekday()) % 7  # next Wednesday
+        if days_ahead < 3:
+            days_ahead += 7  # at least 3 days out for good availability
+    else:
+        days_ahead = (5 - today.weekday()) % 7  # next Saturday
+        if days_ahead < 3:
+            days_ahead += 7
+    check_date = (today + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+
+    availability = get_availability(tenant_id, check_date)
+    if not availability:
+        return None
+
+    all_hours = set()
+    for entry in availability:
+        for slot in entry.get("slots", []):
+            if slot["duration"] == 60:
+                all_hours.add(int(slot["start_time"].split(":")[0]))
+    return sorted(all_hours) if all_hours else None
 
 
-def generate_hourly_slots(open_h, close_h):
-    """Generate all possible hourly start times between open and close."""
-    if close_h <= open_h:
-        return list(range(open_h, 24)) + list(range(0, close_h))
-    return list(range(open_h, close_h))
+# Cache bookable hours per tenant+day_type to avoid repeated API calls
+_bookable_hours_cache = {}
+
+
+def get_schedule_hours(tenant_id, date_str):
+    """Get the actual bookable hours for a date, using cache."""
+    day_type = get_day_type(date_str)
+    cache_key = f"{tenant_id}_{day_type}"
+    if cache_key not in _bookable_hours_cache:
+        hours = get_bookable_hours(tenant_id, day_type)
+        if hours:
+            _bookable_hours_cache[cache_key] = hours
+        else:
+            # Fallback to opening hours if API check fails
+            return None
+    return _bookable_hours_cache[cache_key]
 
 
 def classify_court(resource):
@@ -124,17 +153,15 @@ def build_price_map(club_slug, clubs_dict=None):
     if not tenant_info:
         return None
 
-    # Pick future dates: next Wednesday and next Saturday
+    # Pick future dates with good availability (at least 5 days out)
     today = datetime.now()
-    # Find next Wednesday (weekday=2)
     days_until_wed = (2 - today.weekday()) % 7
-    if days_until_wed == 0:
-        days_until_wed = 7
+    if days_until_wed < 5:
+        days_until_wed += 7
     weekday_date = (today + timedelta(days=days_until_wed)).strftime("%Y-%m-%d")
-    # Find next Saturday (weekday=5)
     days_until_sat = (5 - today.weekday()) % 7
-    if days_until_sat == 0:
-        days_until_sat = 7
+    if days_until_sat < 5:
+        days_until_sat += 7
     weekend_date = (today + timedelta(days=days_until_sat)).strftime("%Y-%m-%d")
 
     # Build resource info: resource_id -> (name, court_type)
@@ -252,9 +279,11 @@ def scrape_playtomic_hourly(date_str, club_slug, clubs_dict=None):
     if availability is None:
         return None
 
-    # Opening hours and full schedule
-    open_h, close_h = parse_opening_hours(tenant_info, date_str)
-    schedule_hours = generate_hourly_slots(open_h, close_h)
+    # Get actual bookable hours (from cached future availability check)
+    schedule_hours = get_schedule_hours(tenant_id, date_str)
+    if not schedule_hours:
+        logger.warning(f"Could not determine bookable hours for {club_slug}")
+        return None
 
     # Current hour — only observe from this hour onwards for today
     now = datetime.now()
@@ -262,8 +291,6 @@ def scrape_playtomic_hourly(date_str, club_slug, clubs_dict=None):
     if date_str == today_str:
         current_hour = now.hour
         observable_hours = [h for h in schedule_hours if h >= current_hour]
-        if close_h <= open_h and current_hour < open_h:
-            observable_hours = [h for h in schedule_hours if h >= current_hour or h < close_h]
     else:
         observable_hours = schedule_hours
 
