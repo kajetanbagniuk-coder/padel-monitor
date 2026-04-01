@@ -57,40 +57,63 @@ def scrape_club(club_slug, date_str):
 
 
 def scheduled_scrape_kluby():
-    """Scrape today's and tomorrow's schedule for kluby.org clubs only."""
+    """Scrape today + 7 days ahead for kluby.org clubs."""
     today = datetime.now()
-    tomorrow = today + timedelta(days=1)
+    dates = [today + timedelta(days=d) for d in range(8)]  # today .. today+7
     for club_slug, club in CLUBS.items():
         system = club.get("booking_system", "kluby_org")
         if system == "playtomic":
-            continue  # Playtomic clubs handled by hourly scraper
-        for date in [today, tomorrow]:
+            continue  # Playtomic clubs handled separately
+        for date in dates:
             date_str = date.strftime("%Y-%m-%d")
-            logger.info(f"Scheduled scrape (kluby): {club_slug} for {date_str}")
             try:
                 result = scrape_date(date_str, club_slug)
                 if result:
-                    logger.info(f"  {club_slug} {date_str}: {result['total_booked']} booked, {result['total_income']:.2f} PLN")
+                    logger.info(f"  kluby {club_slug} {date_str}: {result['total_booked']} booked, {result['total_income']:.2f} PLN")
             except Exception as e:
-                logger.error(f"  {club_slug} {date_str} failed: {e}")
+                logger.error(f"  kluby {club_slug} {date_str} failed: {e}")
 
 
 def scheduled_scrape_playtomic():
-    """Hourly scrape of Playtomic clubs — called at XX:45.
+    """Hourly scrape of Playtomic clubs for TODAY only — called at XX:45.
 
-    Only observes current + future hours. Past observations are preserved.
+    Today needs hourly observations because past slots are hidden.
     """
     today_str = datetime.now().strftime("%Y-%m-%d")
-    playtomic_clubs = {slug: c for slug, c in CLUBS.items()
-                       if c.get("booking_system") in ("playtomic", "both")}
-    logger.info(f"Playtomic hourly scrape: {len(playtomic_clubs)} clubs for {today_str}")
-    for club_slug in playtomic_clubs:
+    playtomic_slugs = [slug for slug, c in CLUBS.items()
+                       if c.get("booking_system") in ("playtomic", "both")]
+    logger.info(f"Playtomic hourly scrape: {len(playtomic_slugs)} clubs for {today_str}")
+    for club_slug in playtomic_slugs:
         try:
             result = scrape_playtomic_hourly(today_str, club_slug)
             if result:
-                logger.info(f"  {club_slug}: {result['total_booked']} booked, {result['total_income']:.2f} PLN")
+                logger.info(f"  playtomic {club_slug}: {result['total_booked']} booked, {result['total_income']:.2f} PLN")
         except Exception as e:
-            logger.error(f"  {club_slug} failed: {e}")
+            logger.error(f"  playtomic {club_slug} failed: {e}")
+        time.sleep(1)
+
+
+def scheduled_scrape_playtomic_future():
+    """Scrape Playtomic clubs for tomorrow + 7 days ahead.
+
+    Future dates show the FULL schedule (no hidden slots), so this
+    only needs to run a few times a day, not every hour.
+    """
+    today = datetime.now()
+    dates = [today + timedelta(days=d) for d in range(1, 8)]  # tomorrow .. today+7
+    playtomic_slugs = [slug for slug, c in CLUBS.items()
+                       if c.get("booking_system") in ("playtomic", "both")]
+    logger.info(f"Playtomic future scrape: {len(playtomic_slugs)} clubs x {len(dates)} days")
+    for date in dates:
+        date_str = date.strftime("%Y-%m-%d")
+        for club_slug in playtomic_slugs:
+            try:
+                result = scrape_playtomic_hourly(date_str, club_slug)
+                if result:
+                    logger.info(f"  playtomic {club_slug} {date_str}: {result['total_booked']} booked, {result['total_income']:.2f} PLN")
+            except Exception as e:
+                logger.error(f"  playtomic {club_slug} {date_str} failed: {e}")
+            time.sleep(1)
         time.sleep(1)  # Rate limiting
 
 
@@ -104,12 +127,16 @@ def scheduled_pricing_scrape():
         logger.error(f"Weekly pricing scrape failed: {e}")
 
 
-# Kluby.org: 10:00, 18:00, 23:40 daily
+# Kluby.org: today + 7 days ahead at 10:00, 18:00, 23:40
 scheduler.add_job(scheduled_scrape_kluby, "cron", hour=10, minute=0, id="kluby_10am")
 scheduler.add_job(scheduled_scrape_kluby, "cron", hour=18, minute=0, id="kluby_6pm")
 scheduler.add_job(scheduled_scrape_kluby, "cron", hour=23, minute=40, id="kluby_1140pm")
-# Playtomic: every hour at :45 (6:45, 7:45, ..., 23:45)
+# Playtomic TODAY: every hour at :45 (hourly observations)
 scheduler.add_job(scheduled_scrape_playtomic, "cron", minute=45, id="playtomic_hourly")
+# Playtomic FUTURE: tomorrow + 7 days at 10:00, 18:00, 23:40
+scheduler.add_job(scheduled_scrape_playtomic_future, "cron", hour=10, minute=0, id="playtomic_future_10am")
+scheduler.add_job(scheduled_scrape_playtomic_future, "cron", hour=18, minute=0, id="playtomic_future_6pm")
+scheduler.add_job(scheduled_scrape_playtomic_future, "cron", hour=23, minute=40, id="playtomic_future_1140pm")
 # Weekly pricing re-scrape: Monday 3 AM
 scheduler.add_job(scheduled_pricing_scrape, "cron", day_of_week="mon", hour=3, minute=0, id="pricing_weekly")
 
