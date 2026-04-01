@@ -69,8 +69,22 @@ def init_db():
         )
     """)
 
+    # Playtomic hourly observations: one row per court per hour, upserted each :45 scrape
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS playtomic_observations (
+            target_date TEXT NOT NULL,
+            club_slug TEXT NOT NULL,
+            court_name TEXT NOT NULL,
+            hour INTEGER NOT NULL,
+            is_booked INTEGER NOT NULL,
+            price REAL NOT NULL DEFAULT 0,
+            observed_at TEXT NOT NULL,
+            PRIMARY KEY (target_date, club_slug, court_name, hour)
+        )
+    """)
     c.execute("CREATE INDEX IF NOT EXISTS idx_bookings_date_club ON bookings(target_date, club_slug)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_snapshot_date_club ON daily_snapshot(target_date, club_slug)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_ptobs_date_club ON playtomic_observations(target_date, club_slug)")
     conn.commit()
     conn.close()
 
@@ -237,6 +251,67 @@ def get_aggregated_range(start_date, end_date, city=None):
     return {
         "clubs": clubs,
         "total_income": total_income,
+    }
+
+
+def save_playtomic_observations(target_date, club_slug, observations):
+    """Upsert hourly observations for a Playtomic club.
+
+    observations: list of dicts with keys: court_name, hour, is_booked, price
+    """
+    conn = get_connection()
+    c = conn.cursor()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    for obs in observations:
+        c.execute("""
+            INSERT INTO playtomic_observations (target_date, club_slug, court_name, hour, is_booked, price, observed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(target_date, club_slug, court_name, hour) DO UPDATE SET
+                is_booked=excluded.is_booked,
+                price=excluded.price,
+                observed_at=excluded.observed_at
+        """, (target_date, club_slug, obs["court_name"], obs["hour"],
+              1 if obs["is_booked"] else 0, obs["price"], now))
+    conn.commit()
+    conn.close()
+
+
+def get_playtomic_daily_summary(target_date, club_slug):
+    """Build daily summary from accumulated hourly observations."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+        SELECT court_name, hour, is_booked, price
+        FROM playtomic_observations
+        WHERE target_date = ? AND club_slug = ?
+        ORDER BY court_name, hour
+    """, (target_date, club_slug))
+    rows = c.fetchall()
+    conn.close()
+
+    if not rows:
+        return None
+
+    courts_summary = {}
+    total_booked = 0
+    total_income = 0.0
+
+    for row in rows:
+        court = row["court_name"]
+        if court not in courts_summary:
+            courts_summary[court] = {"booked": 0, "available": 0, "income": 0.0}
+        if row["is_booked"]:
+            courts_summary[court]["booked"] += 1
+            courts_summary[court]["income"] += row["price"]
+            total_booked += 1
+            total_income += row["price"]
+        else:
+            courts_summary[court]["available"] += 1
+
+    return {
+        "total_booked": total_booked,
+        "total_income": total_income,
+        "courts_summary": courts_summary,
     }
 
 

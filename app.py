@@ -8,6 +8,7 @@ for padel clubs based on data scraped from kluby.org and Playtomic.
 import logging
 import json
 import os
+import time
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -16,7 +17,7 @@ from database import (init_db, get_latest_snapshot_for_date, get_income_range,
                       get_all_snapshots_for_date, get_club_pricing, get_all_club_pricing,
                       get_aggregated_daily, get_aggregated_range)
 from scraper import scrape_date
-from playtomic_scraper import scrape_playtomic_date
+from playtomic_scraper import scrape_playtomic_hourly
 from pricing_scraper import scrape_club_pricing, scrape_all_pricing
 from clubs import CLUBS, DEFAULT_CLUB
 
@@ -44,10 +45,10 @@ def scrape_club(club_slug, date_str):
         return None
     system = club.get("booking_system", "kluby_org")
     if system == "playtomic":
-        return scrape_playtomic_date(date_str, club_slug)
+        return scrape_playtomic_hourly(date_str, club_slug)
     elif system == "both":
         # Use Playtomic as primary (has real prices), fall back to kluby.org
-        result = scrape_playtomic_date(date_str, club_slug)
+        result = scrape_playtomic_hourly(date_str, club_slug)
         if not result:
             result = scrape_date(date_str, club_slug)
         return result
@@ -55,20 +56,42 @@ def scrape_club(club_slug, date_str):
         return scrape_date(date_str, club_slug)
 
 
-def scheduled_scrape():
-    """Scrape today's and tomorrow's schedule for all clubs."""
+def scheduled_scrape_kluby():
+    """Scrape today's and tomorrow's schedule for kluby.org clubs only."""
     today = datetime.now()
     tomorrow = today + timedelta(days=1)
-    for club_slug in CLUBS:
+    for club_slug, club in CLUBS.items():
+        system = club.get("booking_system", "kluby_org")
+        if system == "playtomic":
+            continue  # Playtomic clubs handled by hourly scraper
         for date in [today, tomorrow]:
             date_str = date.strftime("%Y-%m-%d")
-            logger.info(f"Scheduled scrape: {club_slug} for {date_str}")
+            logger.info(f"Scheduled scrape (kluby): {club_slug} for {date_str}")
             try:
-                result = scrape_club(club_slug, date_str)
+                result = scrape_date(date_str, club_slug)
                 if result:
                     logger.info(f"  {club_slug} {date_str}: {result['total_booked']} booked, {result['total_income']:.2f} PLN")
             except Exception as e:
                 logger.error(f"  {club_slug} {date_str} failed: {e}")
+
+
+def scheduled_scrape_playtomic():
+    """Hourly scrape of Playtomic clubs — called at XX:45.
+
+    Only observes current + future hours. Past observations are preserved.
+    """
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    playtomic_clubs = {slug: c for slug, c in CLUBS.items()
+                       if c.get("booking_system") in ("playtomic", "both")}
+    logger.info(f"Playtomic hourly scrape: {len(playtomic_clubs)} clubs for {today_str}")
+    for club_slug in playtomic_clubs:
+        try:
+            result = scrape_playtomic_hourly(today_str, club_slug)
+            if result:
+                logger.info(f"  {club_slug}: {result['total_booked']} booked, {result['total_income']:.2f} PLN")
+        except Exception as e:
+            logger.error(f"  {club_slug} failed: {e}")
+        time.sleep(1)  # Rate limiting
 
 
 def scheduled_pricing_scrape():
@@ -81,10 +104,12 @@ def scheduled_pricing_scrape():
         logger.error(f"Weekly pricing scrape failed: {e}")
 
 
-# Schedule: 10:00, 18:00, 23:40 daily
-scheduler.add_job(scheduled_scrape, "cron", hour=10, minute=0, id="scrape_10am")
-scheduler.add_job(scheduled_scrape, "cron", hour=18, minute=0, id="scrape_6pm")
-scheduler.add_job(scheduled_scrape, "cron", hour=23, minute=40, id="scrape_1140pm")
+# Kluby.org: 10:00, 18:00, 23:40 daily
+scheduler.add_job(scheduled_scrape_kluby, "cron", hour=10, minute=0, id="kluby_10am")
+scheduler.add_job(scheduled_scrape_kluby, "cron", hour=18, minute=0, id="kluby_6pm")
+scheduler.add_job(scheduled_scrape_kluby, "cron", hour=23, minute=40, id="kluby_1140pm")
+# Playtomic: every hour at :45 (6:45, 7:45, ..., 23:45)
+scheduler.add_job(scheduled_scrape_playtomic, "cron", minute=45, id="playtomic_hourly")
 # Weekly pricing re-scrape: Monday 3 AM
 scheduler.add_job(scheduled_pricing_scrape, "cron", day_of_week="mon", hour=3, minute=0, id="pricing_weekly")
 
@@ -322,7 +347,8 @@ import threading
 init_db()
 scheduler.start()
 logger.info("Starting background scrape of all clubs...")
-threading.Thread(target=scheduled_scrape, daemon=True).start()
+threading.Thread(target=scheduled_scrape_kluby, daemon=True).start()
+threading.Thread(target=scheduled_scrape_playtomic, daemon=True).start()
 threading.Thread(target=_startup_pricing_scrape, daemon=True).start()
 
 if __name__ == "__main__":
