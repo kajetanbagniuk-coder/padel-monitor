@@ -1,0 +1,306 @@
+"""
+Loba Padel Income Monitor - Main Application
+
+A web dashboard that tracks court bookings and calculates income
+for padel clubs based on data scraped from kluby.org.
+"""
+
+import logging
+import json
+import os
+from datetime import datetime, timedelta
+from flask import Flask, render_template, jsonify, request
+from apscheduler.schedulers.background import BackgroundScheduler
+
+from database import (init_db, get_latest_snapshot_for_date, get_income_range,
+                      get_all_snapshots_for_date, get_club_pricing, get_all_club_pricing,
+                      get_aggregated_daily, get_aggregated_range)
+from scraper import scrape_date
+from pricing_scraper import scrape_club_pricing, scrape_all_pricing
+from clubs import CLUBS, DEFAULT_CLUB
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.FileHandler(os.path.join(os.environ.get("DATA_DIR", "."), "padel_monitor.log")),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+app = Flask(__name__)
+
+# ── Scheduler ──────────────────────────────────────────────────────
+scheduler = BackgroundScheduler()
+
+
+def scheduled_scrape():
+    """Scrape today's and tomorrow's schedule for all clubs."""
+    today = datetime.now()
+    tomorrow = today + timedelta(days=1)
+    for club_slug in CLUBS:
+        for date in [today, tomorrow]:
+            date_str = date.strftime("%Y-%m-%d")
+            logger.info(f"Scheduled scrape: {club_slug} for {date_str}")
+            try:
+                result = scrape_date(date_str, club_slug)
+                if result:
+                    logger.info(f"  {club_slug} {date_str}: {result['total_booked']} booked, {result['total_income']:.2f} PLN")
+            except Exception as e:
+                logger.error(f"  {club_slug} {date_str} failed: {e}")
+
+
+def scheduled_pricing_scrape():
+    """Weekly re-scrape of all club pricing."""
+    logger.info("Starting weekly pricing re-scrape...")
+    try:
+        summary = scrape_all_pricing()
+        logger.info(f"Weekly pricing scrape done: {summary['ok']} ok, {summary['not_found']} not found, {summary['parse_error']} errors")
+    except Exception as e:
+        logger.error(f"Weekly pricing scrape failed: {e}")
+
+
+# Schedule: 10:00, 18:00, 23:40 daily
+scheduler.add_job(scheduled_scrape, "cron", hour=10, minute=0, id="scrape_10am")
+scheduler.add_job(scheduled_scrape, "cron", hour=18, minute=0, id="scrape_6pm")
+scheduler.add_job(scheduled_scrape, "cron", hour=23, minute=40, id="scrape_1140pm")
+# Weekly pricing re-scrape: Monday 3 AM
+scheduler.add_job(scheduled_pricing_scrape, "cron", day_of_week="mon", hour=3, minute=0, id="pricing_weekly")
+
+
+# ── Routes ─────────────────────────────────────────────────────────
+
+@app.route("/")
+def dashboard():
+    return render_template("dashboard.html")
+
+
+@app.route("/api/clubs")
+def api_clubs():
+    """List all available clubs."""
+    return jsonify(CLUBS)
+
+
+@app.route("/api/scrape-now")
+def api_scrape_now():
+    """Manually trigger a scrape. ?date=YYYY-MM-DD&club=slug"""
+    date_str = request.args.get("date", datetime.now().strftime("%Y-%m-%d"))
+    club_slug = request.args.get("club", DEFAULT_CLUB)
+    if club_slug not in CLUBS:
+        return jsonify({"status": "error", "message": f"Unknown club: {club_slug}"}), 400
+    result = scrape_date(date_str, club_slug)
+    if result:
+        return jsonify({"status": "ok", "data": result})
+    return jsonify({"status": "error", "message": "Scrape failed"}), 500
+
+
+@app.route("/api/daily")
+def api_daily():
+    """Get daily income. ?date=YYYY-MM-DD&club=slug"""
+    date_str = request.args.get("date", datetime.now().strftime("%Y-%m-%d"))
+    club_slug = request.args.get("club", DEFAULT_CLUB)
+    snapshot = get_latest_snapshot_for_date(date_str, club_slug)
+    if snapshot:
+        snapshot["courts_data"] = json.loads(snapshot["courts_data"])
+        return jsonify(snapshot)
+    return jsonify({"target_date": date_str, "club_slug": club_slug, "total_income": 0, "total_booked_slots": 0, "courts_data": {}, "message": "No data yet"})
+
+
+@app.route("/api/daily-history")
+def api_daily_history():
+    """Get all snapshots for a day. ?date=YYYY-MM-DD&club=slug"""
+    date_str = request.args.get("date", datetime.now().strftime("%Y-%m-%d"))
+    club_slug = request.args.get("club", DEFAULT_CLUB)
+    snapshots = get_all_snapshots_for_date(date_str, club_slug)
+    for s in snapshots:
+        s["courts_data"] = json.loads(s["courts_data"])
+    return jsonify(snapshots)
+
+
+@app.route("/api/weekly")
+def api_weekly():
+    """Get weekly income. ?week_start=YYYY-MM-DD&club=slug"""
+    today = datetime.now()
+    default_start = (today - timedelta(days=today.weekday())).strftime("%Y-%m-%d")
+    start = request.args.get("week_start", default_start)
+    club_slug = request.args.get("club", DEFAULT_CLUB)
+    start_dt = datetime.strptime(start, "%Y-%m-%d")
+    end = (start_dt + timedelta(days=6)).strftime("%Y-%m-%d")
+    rows = get_income_range(start, end, club_slug)
+    total = sum(r["total_income"] for r in rows)
+    return jsonify({"week_start": start, "week_end": end, "total_income": total, "days": rows})
+
+
+@app.route("/api/monthly")
+def api_monthly():
+    """Get monthly income. ?month=YYYY-MM&club=slug"""
+    today = datetime.now()
+    month_str = request.args.get("month", today.strftime("%Y-%m"))
+    club_slug = request.args.get("club", DEFAULT_CLUB)
+    year, month = map(int, month_str.split("-"))
+    start = f"{year}-{month:02d}-01"
+    if month == 12:
+        end = f"{year + 1}-01-01"
+    else:
+        end = f"{year}-{month + 1:02d}-01"
+    end_dt = datetime.strptime(end, "%Y-%m-%d") - timedelta(days=1)
+    end = end_dt.strftime("%Y-%m-%d")
+    rows = get_income_range(start, end, club_slug)
+    total = sum(r["total_income"] for r in rows)
+    return jsonify({"month": month_str, "start": start, "end": end, "total_income": total, "days": rows})
+
+
+# ── Aggregated API ─────────────────────────────────────────────────
+
+@app.route("/api/aggregated-daily")
+def api_aggregated_daily():
+    """Aggregated income across all clubs for a single date. ?date=YYYY-MM-DD&city=CityName"""
+    date_str = request.args.get("date", datetime.now().strftime("%Y-%m-%d"))
+    city = request.args.get("city")
+    if city == "ALL":
+        city = None
+    result = get_aggregated_daily(date_str, city)
+    # Enrich club data with name/city/courts from CLUBS dict
+    clubs_enriched = []
+    for c in result["clubs"]:
+        info = CLUBS.get(c["club_slug"], {})
+        clubs_enriched.append({
+            "slug": c["club_slug"],
+            "name": info.get("name", c["club_slug"]),
+            "city": info.get("city", ""),
+            "courts": info.get("courts", 0),
+            "income": c["total_income"],
+            "booked": c.get("total_booked_slots", 0),
+        })
+    return jsonify({
+        "date": date_str,
+        "city": city or "ALL",
+        "total_income": result["total_income"],
+        "total_booked": result["total_booked"],
+        "clubs": clubs_enriched,
+    })
+
+
+@app.route("/api/aggregated-range")
+def api_aggregated_range():
+    """Aggregated income across all clubs for a date range. ?start=YYYY-MM-DD&end=YYYY-MM-DD&city=CityName"""
+    today = datetime.now()
+    start = request.args.get("start", today.strftime("%Y-%m-%d"))
+    end = request.args.get("end", today.strftime("%Y-%m-%d"))
+    city = request.args.get("city")
+    if city == "ALL":
+        city = None
+    result = get_aggregated_range(start, end, city)
+    clubs_enriched = []
+    for c in result["clubs"]:
+        info = CLUBS.get(c["club_slug"], {})
+        clubs_enriched.append({
+            "slug": c["club_slug"],
+            "name": info.get("name", c["club_slug"]),
+            "city": info.get("city", ""),
+            "courts": info.get("courts", 0),
+            "income": c["total_income"],
+        })
+    return jsonify({
+        "start": start,
+        "end": end,
+        "city": city or "ALL",
+        "total_income": result["total_income"],
+        "clubs": clubs_enriched,
+    })
+
+
+# ── Pricing API ────────────────────────────────────────────────────
+
+@app.route("/api/club-pricing")
+def api_club_pricing():
+    """Get pricing rules for a club. ?club=slug"""
+    club_slug = request.args.get("club", DEFAULT_CLUB)
+    row = get_club_pricing(club_slug)
+    if row and row["status"] == "ok":
+        return jsonify({
+            "club_slug": club_slug,
+            "pricing_type": "per_club",
+            "rules": json.loads(row["pricing_json"]),
+            "scraped_at": row["scraped_at"],
+            "notes": row["notes"],
+        })
+    # Return generic pricing as fallback
+    return jsonify({
+        "club_slug": club_slug,
+        "pricing_type": "generic",
+        "rules": [
+            {"day_type": "weekday", "start_hour": 6, "start_min": 0, "end_hour": 16, "end_min": 0, "price_per_hour": 120},
+            {"day_type": "weekday", "start_hour": 16, "start_min": 0, "end_hour": 22, "end_min": 0, "price_per_hour": 200},
+            {"day_type": "weekday", "start_hour": 22, "start_min": 0, "end_hour": 23, "end_min": 59, "price_per_hour": 140},
+            {"day_type": "weekend", "start_hour": 6, "start_min": 0, "end_hour": 23, "end_min": 59, "price_per_hour": 200},
+        ],
+        "scraped_at": None,
+        "notes": row["notes"] if row else "No pricing data scraped yet",
+    })
+
+
+@app.route("/api/scrape-pricing")
+def api_scrape_pricing():
+    """Trigger pricing scrape. ?club=slug or ?all=true"""
+    if request.args.get("all") == "true":
+        import threading
+        threading.Thread(target=scrape_all_pricing, daemon=True).start()
+        return jsonify({"status": "ok", "message": "Scraping all clubs in background..."})
+    club_slug = request.args.get("club")
+    if not club_slug:
+        return jsonify({"status": "error", "message": "Provide ?club=slug or ?all=true"}), 400
+    if club_slug not in CLUBS:
+        return jsonify({"status": "error", "message": f"Unknown club: {club_slug}"}), 400
+    result = scrape_club_pricing(club_slug)
+    return jsonify({"status": "ok", "data": {"slug": club_slug, "scrape_status": result["status"], "notes": result["notes"], "rule_count": len(result["rules"])}})
+
+
+@app.route("/api/pricing-status")
+def api_pricing_status():
+    """Overview of all clubs' pricing scrape status."""
+    all_pricing = get_all_club_pricing()
+    scraped_slugs = {p["club_slug"] for p in all_pricing}
+    total = len(CLUBS)
+    ok = sum(1 for p in all_pricing if p["status"] == "ok")
+    not_found = sum(1 for p in all_pricing if p["status"] == "not_found")
+    parse_error = sum(1 for p in all_pricing if p["status"] == "parse_error")
+    not_scraped = total - len(scraped_slugs)
+    return jsonify({
+        "total_clubs": total,
+        "ok": ok,
+        "not_found": not_found,
+        "parse_error": parse_error,
+        "not_scraped": not_scraped,
+        "clubs": all_pricing,
+    })
+
+
+# ── Startup ────────────────────────────────────────────────────────
+
+def _startup_pricing_scrape():
+    """If club_pricing table is empty, scrape all pricing in background."""
+    all_pricing = get_all_club_pricing()
+    if not all_pricing:
+        logger.info("Club pricing table empty - scraping all club pricing...")
+        scrape_all_pricing()
+        logger.info("Initial pricing scrape complete.")
+    else:
+        logger.info(f"Club pricing table has {len(all_pricing)} entries, skipping auto-scrape.")
+
+
+# ── Initialization (runs under both gunicorn and local dev) ───────
+import threading
+
+init_db()
+scheduler.start()
+logger.info("Starting background scrape of all clubs...")
+threading.Thread(target=scheduled_scrape, daemon=True).start()
+threading.Thread(target=_startup_pricing_scrape, daemon=True).start()
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    logger.info(f"Starting Padel Income Monitor on http://localhost:{port}")
+    app.run(host="0.0.0.0", port=port, debug=False)

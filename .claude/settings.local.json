@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:kluby.org)",
+      "Bash(pip install:*)",
+      "Bash(where python:*)",
+      "Bash(python -m pip install -r /c/Users/kbagn/OneDrive/Pulpit/cloude/requirements.txt)",
+      "Bash(taskkill //F //IM python.exe)",
+      "Bash(python -c \":*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(curl -s http://localhost:5000/)",
+      "Bash(curl -s http://localhost:5000/api/daily)",
+      "Bash(python -m json.tool)",
+      "Bash(curl -s http://localhost:5000/api/weekly)",
+      "Bash(curl -s http://localhost:5000/api/monthly)",
+      "Bash(curl -s \"http://localhost:5000/api/daily?date=2026-04-01\")",
+      "Bash(curl -s \"http://localhost:5000/api/clubs\")",
+      "Bash(curl -s \"http://localhost:5000/api/daily?club=mera\")",
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); cities={}:*)"
+    ]
+  }
+}

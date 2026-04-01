@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: padel-monitor
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
+    plan: starter
+    envVars:
+      - key: DATA_DIR
+        value: /opt/render/project/data
+      - key: PYTHON_VERSION
+        value: 3.11.11
+    disk:
+      name: padel-data
+      mountPath: /opt/render/project/data
+      sizeGB: 1
