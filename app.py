@@ -337,10 +337,74 @@ def api_aggregated_range():
 
 # ── Pricing API ────────────────────────────────────────────────────
 
+def _playtomic_price_map_to_rules(price_map_rows):
+    """Convert playtomic_price_map rows into display rules grouped by court_type and day_type.
+
+    Groups consecutive hours with the same price into time ranges.
+    """
+    from collections import defaultdict
+
+    # Group by (court_type, day_type, price) to find consecutive hour ranges
+    grouped = defaultdict(list)
+    for row in price_map_rows:
+        key = (row["court_type"], row["day_type"])
+        grouped[key].append((row["hour"], row["price"]))
+
+    court_labels = {
+        "double_indoor": "Double Indoor",
+        "double_outdoor": "Double Outdoor",
+        "single_indoor": "Single Indoor",
+        "single_outdoor": "Single Outdoor",
+    }
+    day_labels = {"weekday": "Mon-Fri", "weekend": "Sat-Sun"}
+
+    rules = []
+    for (court_type, day_type), hours_prices in sorted(grouped.items()):
+        hours_prices.sort(key=lambda x: x[0])
+        # Group consecutive hours with same price
+        i = 0
+        while i < len(hours_prices):
+            start_h, price = hours_prices[i]
+            end_h = start_h + 1
+            j = i + 1
+            while j < len(hours_prices) and hours_prices[j][1] == price and hours_prices[j][0] == end_h:
+                end_h = hours_prices[j][0] + 1
+                j += 1
+            court_label = court_labels.get(court_type, court_type)
+            day_label = day_labels.get(day_type, day_type)
+            rules.append({
+                "day_type": f"{day_label} | {court_label}",
+                "start_hour": start_h, "start_min": 0,
+                "end_hour": end_h, "end_min": 0,
+                "price_per_hour": price,
+            })
+            i = j
+    return rules
+
+
 @app.route("/api/club-pricing")
 def api_club_pricing():
     """Get pricing rules for a club. ?club=slug"""
     club_slug = request.args.get("club", DEFAULT_CLUB)
+    club = CLUBS.get(club_slug, {})
+    system = club.get("booking_system", "kluby_org")
+
+    # For Playtomic clubs, use the playtomic_price_map
+    if system in ("playtomic", "both") and club.get("playtomic_id"):
+        from database import get_playtomic_price_map
+        price_map = get_playtomic_price_map(club_slug)
+        if price_map:
+            rules = _playtomic_price_map_to_rules(price_map)
+            updated = price_map[0]["updated_at"] if price_map else None
+            return jsonify({
+                "club_slug": club_slug,
+                "pricing_type": "per_club",
+                "rules": rules,
+                "scraped_at": updated,
+                "notes": "From Playtomic API",
+            })
+
+    # For kluby.org clubs, use club_pricing table
     row = get_club_pricing(club_slug)
     if row and row["status"] == "ok":
         return jsonify({
@@ -350,7 +414,7 @@ def api_club_pricing():
             "scraped_at": row["scraped_at"],
             "notes": row["notes"],
         })
-    # Return generic pricing as fallback
+    # Generic fallback
     return jsonify({
         "club_slug": club_slug,
         "pricing_type": "generic",
