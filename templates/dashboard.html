@@ -572,7 +572,8 @@
             for (const [slug, info] of entries) {
                 const opt = document.createElement('option');
                 opt.value = slug;
-                opt.textContent = info.name + ' (' + info.courts + ' ct, ' + info.city + ')';
+                const sys = info.booking_system === 'playtomic' ? ' [P]' : info.booking_system === 'both' ? ' [K+P]' : ' [K]';
+                opt.textContent = info.name + ' (' + info.courts + ' ct, ' + info.city + ')' + sys;
                 if (slug === currentClub) opt.selected = true;
                 clubPicker.appendChild(opt);
             }
@@ -996,24 +997,28 @@
                 <th>#</th>
                 <th>Club Name</th>
                 <th>City</th>
+                <th>Src</th>
                 <th>Courts</th>
                 ${bookedCol ? '<th>Booked Slots</th>' : ''}
                 <th>Income (PLN)</th>`;
 
             let rowsHtml = '';
             clubs.forEach((club, i) => {
+                const sysLabel = club.booking_system === 'playtomic' ? 'P' : club.booking_system === 'both' ? 'K+P' : 'K';
+                const sysColor = club.booking_system === 'playtomic' ? '#3498db' : club.booking_system === 'both' ? '#e67e22' : '#2ecc71';
                 rowsHtml += `
                     <tr data-slug="${club.slug}">
                         <td class="rank">${i + 1}</td>
                         <td>${club.name}</td>
                         <td>${club.city}</td>
+                        <td><span style="color:${sysColor};font-size:0.75em;font-weight:600;">${sysLabel}</span></td>
                         <td>${club.courts}</td>
                         ${bookedCol ? `<td>${club.booked || 0}</td>` : ''}
                         <td class="income">${fmt(club.income)}</td>
                     </tr>`;
             });
             if (clubs.length === 0) {
-                const colSpan = bookedCol ? 6 : 5;
+                const colSpan = bookedCol ? 7 : 6;
                 rowsHtml = `<tr><td colspan="${colSpan}" style="text-align:center;color:#666;font-style:italic;">No data for this date</td></tr>`;
             }
             document.getElementById('agg-table-body').innerHTML = rowsHtml;

@@ -2,7 +2,7 @@
 Loba Padel Income Monitor - Main Application
 
 A web dashboard that tracks court bookings and calculates income
-for padel clubs based on data scraped from kluby.org.
+for padel clubs based on data scraped from kluby.org and Playtomic.
 """
 
 import logging
@@ -16,6 +16,7 @@ from database import (init_db, get_latest_snapshot_for_date, get_income_range,
                       get_all_snapshots_for_date, get_club_pricing, get_all_club_pricing,
                       get_aggregated_daily, get_aggregated_range)
 from scraper import scrape_date
+from playtomic_scraper import scrape_playtomic_date
 from pricing_scraper import scrape_club_pricing, scrape_all_pricing
 from clubs import CLUBS, DEFAULT_CLUB
 
@@ -36,6 +37,24 @@ app = Flask(__name__)
 scheduler = BackgroundScheduler()
 
 
+def scrape_club(club_slug, date_str):
+    """Scrape a single club using the appropriate scraper based on booking_system."""
+    club = CLUBS.get(club_slug)
+    if not club:
+        return None
+    system = club.get("booking_system", "kluby_org")
+    if system == "playtomic":
+        return scrape_playtomic_date(date_str, club_slug)
+    elif system == "both":
+        # Use Playtomic as primary (has real prices), fall back to kluby.org
+        result = scrape_playtomic_date(date_str, club_slug)
+        if not result:
+            result = scrape_date(date_str, club_slug)
+        return result
+    else:
+        return scrape_date(date_str, club_slug)
+
+
 def scheduled_scrape():
     """Scrape today's and tomorrow's schedule for all clubs."""
     today = datetime.now()
@@ -45,7 +64,7 @@ def scheduled_scrape():
             date_str = date.strftime("%Y-%m-%d")
             logger.info(f"Scheduled scrape: {club_slug} for {date_str}")
             try:
-                result = scrape_date(date_str, club_slug)
+                result = scrape_club(club_slug, date_str)
                 if result:
                     logger.info(f"  {club_slug} {date_str}: {result['total_booked']} booked, {result['total_income']:.2f} PLN")
             except Exception as e:
@@ -90,7 +109,7 @@ def api_scrape_now():
     club_slug = request.args.get("club", DEFAULT_CLUB)
     if club_slug not in CLUBS:
         return jsonify({"status": "error", "message": f"Unknown club: {club_slug}"}), 400
-    result = scrape_date(date_str, club_slug)
+    result = scrape_club(club_slug, date_str)
     if result:
         return jsonify({"status": "ok", "data": result})
     return jsonify({"status": "error", "message": "Scrape failed"}), 500
@@ -173,6 +192,7 @@ def api_aggregated_daily():
             "courts": info.get("courts", 0),
             "income": c["total_income"],
             "booked": c.get("total_booked_slots", 0),
+            "booking_system": info.get("booking_system", "kluby_org"),
         })
     return jsonify({
         "date": date_str,
@@ -202,6 +222,7 @@ def api_aggregated_range():
             "city": info.get("city", ""),
             "courts": info.get("courts", 0),
             "income": c["total_income"],
+            "booking_system": info.get("booking_system", "kluby_org"),
         })
     return jsonify({
         "start": start,
