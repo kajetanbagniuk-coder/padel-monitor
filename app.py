@@ -26,7 +26,6 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
-        logging.FileHandler(os.path.join(os.environ.get("DATA_DIR", "."), "padel_monitor.log")),
         logging.StreamHandler()
     ]
 )
@@ -183,38 +182,19 @@ def api_scrape_now():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-@app.route("/api/recover-db")
-def api_recover_db():
-    """Attempt to recover a corrupted database."""
-    from database import DB_PATH
-    import sqlite3
+@app.route("/api/db-health")
+def api_db_health():
+    """Check database health."""
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=10)
-        result = conn.execute("PRAGMA integrity_check").fetchone()
+        from database import get_connection
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM daily_snapshot")
+        count = c.fetchone()[0]
         conn.close()
-        if result[0] == "ok":
-            return jsonify({"status": "ok", "message": "Database is healthy"})
-        # Corrupted — remove and reinitialize
-        logger.warning("Database corrupted, recovering...")
-        os.remove(DB_PATH)
-        for suffix in ["-wal", "-shm"]:
-            path = DB_PATH + suffix
-            if os.path.exists(path):
-                os.remove(path)
-        init_db()
-        return jsonify({"status": "ok", "message": "Database recreated"})
+        return jsonify({"status": "ok", "snapshots": count})
     except Exception as e:
-        logger.error(f"Recovery failed, forcing recreate: {e}")
-        try:
-            os.remove(DB_PATH)
-            for suffix in ["-wal", "-shm"]:
-                path = DB_PATH + suffix
-                if os.path.exists(path):
-                    os.remove(path)
-            init_db()
-            return jsonify({"status": "ok", "message": "Database force-recreated"})
-        except Exception as e2:
-            return jsonify({"status": "error", "message": str(e2)}), 500
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.route("/api/daily")

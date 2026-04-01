@@ -1,42 +1,38 @@
-import sqlite3
 import os
+import psycopg2
+import psycopg2.extras
 from datetime import datetime, timedelta
 
-DATA_DIR = os.environ.get("DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(DATA_DIR, "padel_income.db")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 
 def get_connection():
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    conn.execute("PRAGMA wal_autocheckpoint=10")
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
     return conn
 
 
-def init_db():
-    # Check if existing database is healthy; if corrupted, remove and recreate
-    if os.path.exists(DB_PATH):
-        try:
-            test_conn = sqlite3.connect(DB_PATH, timeout=10)
-            test_conn.execute("PRAGMA integrity_check")
-            test_conn.close()
-        except Exception:
-            import logging
-            logging.getLogger(__name__).warning(f"Database corrupted, recreating: {DB_PATH}")
-            os.remove(DB_PATH)
-            # Also remove WAL/SHM files if present
-            for suffix in ["-wal", "-shm"]:
-                path = DB_PATH + suffix
-                if os.path.exists(path):
-                    os.remove(path)
+def _dictrows(cursor):
+    """Convert cursor results to list of dicts."""
+    cols = [d[0] for d in cursor.description]
+    return [dict(zip(cols, row)) for row in cursor.fetchall()]
 
+
+def _dictrow(cursor):
+    """Convert single cursor result to dict."""
+    row = cursor.fetchone()
+    if not row:
+        return None
+    cols = [d[0] for d in cursor.description]
+    return dict(zip(cols, row))
+
+
+def init_db():
     conn = get_connection()
     c = conn.cursor()
     c.execute("""
         CREATE TABLE IF NOT EXISTS scrape_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             scraped_at TEXT NOT NULL,
             target_date TEXT NOT NULL,
             club_slug TEXT NOT NULL DEFAULT 'loba-padel'
@@ -44,8 +40,8 @@ def init_db():
     """)
     c.execute("""
         CREATE TABLE IF NOT EXISTS bookings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            scrape_id INTEGER NOT NULL,
+            id SERIAL PRIMARY KEY,
+            scrape_id INTEGER NOT NULL REFERENCES scrape_log(id),
             target_date TEXT NOT NULL,
             club_slug TEXT NOT NULL DEFAULT 'loba-padel',
             court_name TEXT NOT NULL,
@@ -53,13 +49,12 @@ def init_db():
             slot_end TEXT NOT NULL,
             is_booked INTEGER NOT NULL,
             booking_label TEXT,
-            income REAL NOT NULL DEFAULT 0,
-            FOREIGN KEY (scrape_id) REFERENCES scrape_log(id)
+            income REAL NOT NULL DEFAULT 0
         )
     """)
     c.execute("""
         CREATE TABLE IF NOT EXISTS daily_snapshot (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             target_date TEXT NOT NULL,
             club_slug TEXT NOT NULL DEFAULT 'loba-padel',
             snapshot_at TEXT NOT NULL,
@@ -68,16 +63,9 @@ def init_db():
             courts_data TEXT NOT NULL
         )
     """)
-    # Migrate: add club_slug column if missing (existing databases)
-    for table in ["scrape_log", "bookings", "daily_snapshot"]:
-        try:
-            c.execute(f"ALTER TABLE {table} ADD COLUMN club_slug TEXT NOT NULL DEFAULT 'loba-padel'")
-        except sqlite3.OperationalError:
-            pass  # column already exists
-
     c.execute("""
         CREATE TABLE IF NOT EXISTS club_pricing (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             club_slug TEXT NOT NULL UNIQUE,
             pricing_json TEXT NOT NULL,
             raw_html TEXT,
@@ -86,8 +74,6 @@ def init_db():
             notes TEXT
         )
     """)
-
-    # Playtomic hourly observations: one row per court per hour, upserted each :45 scrape
     c.execute("""
         CREATE TABLE IF NOT EXISTS playtomic_observations (
             target_date TEXT NOT NULL,
@@ -100,7 +86,6 @@ def init_db():
             PRIMARY KEY (target_date, club_slug, court_name, hour)
         )
     """)
-    # Playtomic price map: per-club, per-court-type, per-day-type, per-hour pricing
     c.execute("""
         CREATE TABLE IF NOT EXISTS playtomic_price_map (
             club_slug TEXT NOT NULL,
@@ -123,13 +108,13 @@ def save_scrape(target_date, slots, club_slug="loba-padel"):
     conn = get_connection()
     c = conn.cursor()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    c.execute("INSERT INTO scrape_log (scraped_at, target_date, club_slug) VALUES (?, ?, ?)",
+    c.execute("INSERT INTO scrape_log (scraped_at, target_date, club_slug) VALUES (%s, %s, %s) RETURNING id",
               (now, target_date, club_slug))
-    scrape_id = c.lastrowid
+    scrape_id = c.fetchone()[0]
     for s in slots:
         c.execute("""
             INSERT INTO bookings (scrape_id, target_date, club_slug, court_name, slot_start, slot_end, is_booked, booking_label, income)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (scrape_id, target_date, club_slug, s["court"], s["start"], s["end"],
               1 if s["booked"] else 0, s.get("label", ""), s["income"]))
     conn.commit()
@@ -143,7 +128,7 @@ def save_daily_snapshot(target_date, total_booked, total_income, courts_json, cl
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     c.execute("""
         INSERT INTO daily_snapshot (target_date, club_slug, snapshot_at, total_booked_slots, total_income, courts_data)
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s)
     """, (target_date, club_slug, now, total_booked, total_income, courts_json))
     conn.commit()
     conn.close()
@@ -153,62 +138,49 @@ def get_latest_snapshot_for_date(target_date, club_slug="loba-padel"):
     conn = get_connection()
     c = conn.cursor()
     c.execute("""
-        SELECT * FROM daily_snapshot WHERE target_date = ? AND club_slug = ? ORDER BY snapshot_at DESC LIMIT 1
+        SELECT * FROM daily_snapshot WHERE target_date = %s AND club_slug = %s ORDER BY snapshot_at DESC LIMIT 1
     """, (target_date, club_slug))
-    row = c.fetchone()
+    row = _dictrow(c)
     conn.close()
-    return dict(row) if row else None
+    return row
 
 
 def get_income_range(start_date, end_date, club_slug="loba-padel"):
     conn = get_connection()
     c = conn.cursor()
     c.execute("""
-        SELECT target_date, MAX(snapshot_at) as latest, total_income
+        SELECT target_date, MAX(snapshot_at) as latest, MAX(total_income) as total_income
         FROM daily_snapshot
-        WHERE target_date >= ? AND target_date <= ? AND club_slug = ?
+        WHERE target_date >= %s AND target_date <= %s AND club_slug = %s
         GROUP BY target_date
     """, (start_date, end_date, club_slug))
-    rows = c.fetchall()
+    rows = _dictrows(c)
     conn.close()
-    return [dict(r) for r in rows]
+    return rows
 
 
 def get_all_snapshots_for_date(target_date, club_slug="loba-padel"):
     conn = get_connection()
     c = conn.cursor()
     c.execute("""
-        SELECT * FROM daily_snapshot WHERE target_date = ? AND club_slug = ? ORDER BY snapshot_at ASC
+        SELECT * FROM daily_snapshot WHERE target_date = %s AND club_slug = %s ORDER BY snapshot_at ASC
     """, (target_date, club_slug))
-    rows = c.fetchall()
+    rows = _dictrows(c)
     conn.close()
-    return [dict(r) for r in rows]
+    return rows
 
 
 def get_aggregated_daily(target_date, city=None):
-    """Get aggregated income across all clubs for a single date.
-
-    For each club, takes the latest snapshot for that date.
-    If city is provided, only includes clubs in that city.
-    Returns list of per-club results plus grand totals.
-    """
     from clubs import CLUBS
     conn = get_connection()
     c = conn.cursor()
-
-    # Get latest snapshot per club for this date
     c.execute("""
-        SELECT club_slug, total_income, total_booked_slots
-        FROM daily_snapshot ds1
-        WHERE target_date = ?
-          AND snapshot_at = (
-              SELECT MAX(ds2.snapshot_at)
-              FROM daily_snapshot ds2
-              WHERE ds2.target_date = ds1.target_date
-                AND ds2.club_slug = ds1.club_slug
-          )
+        SELECT DISTINCT ON (club_slug) club_slug, total_income, total_booked_slots
+        FROM daily_snapshot
+        WHERE target_date = %s
+        ORDER BY club_slug, snapshot_at DESC
     """, (target_date,))
-    rows = c.fetchall()
+    rows = _dictrows(c)
     conn.close()
 
     clubs = []
@@ -228,40 +200,24 @@ def get_aggregated_daily(target_date, city=None):
         total_income += row["total_income"]
         total_booked += row["total_booked_slots"]
 
-    return {
-        "clubs": clubs,
-        "total_income": total_income,
-        "total_booked": total_booked,
-    }
+    return {"clubs": clubs, "total_income": total_income, "total_booked": total_booked}
 
 
 def get_aggregated_range(start_date, end_date, city=None):
-    """Get aggregated income across all clubs for a date range.
-
-    For each club, sums the latest-per-day income across the range.
-    Returns per-club totals and grand total.
-    """
     from clubs import CLUBS
     conn = get_connection()
     c = conn.cursor()
-
-    # For each club+date, get the latest snapshot, then sum per club
     c.execute("""
         SELECT club_slug, SUM(total_income) as total_income
         FROM (
-            SELECT ds1.club_slug, ds1.target_date, ds1.total_income
-            FROM daily_snapshot ds1
-            WHERE ds1.target_date >= ? AND ds1.target_date <= ?
-              AND ds1.snapshot_at = (
-                  SELECT MAX(ds2.snapshot_at)
-                  FROM daily_snapshot ds2
-                  WHERE ds2.target_date = ds1.target_date
-                    AND ds2.club_slug = ds1.club_slug
-              )
-        )
+            SELECT DISTINCT ON (club_slug, target_date) club_slug, target_date, total_income
+            FROM daily_snapshot
+            WHERE target_date >= %s AND target_date <= %s
+            ORDER BY club_slug, target_date, snapshot_at DESC
+        ) sub
         GROUP BY club_slug
     """, (start_date, end_date))
-    rows = c.fetchall()
+    rows = _dictrows(c)
     conn.close()
 
     clubs = []
@@ -272,92 +228,73 @@ def get_aggregated_range(start_date, end_date, city=None):
             continue
         if city and CLUBS[slug]["city"] != city:
             continue
-        clubs.append({
-            "club_slug": slug,
-            "total_income": row["total_income"],
-        })
+        clubs.append({"club_slug": slug, "total_income": row["total_income"]})
         total_income += row["total_income"]
 
-    return {
-        "clubs": clubs,
-        "total_income": total_income,
-    }
+    return {"clubs": clubs, "total_income": total_income}
 
 
 def save_playtomic_prices(club_slug, prices):
-    """Upsert price map entries for a Playtomic club.
-
-    prices: list of dicts with keys: court_type, day_type, hour, price
-    """
     conn = get_connection()
     c = conn.cursor()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     for p in prices:
         c.execute("""
             INSERT INTO playtomic_price_map (club_slug, court_type, day_type, hour, price, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(club_slug, court_type, day_type, hour) DO UPDATE SET
-                price=excluded.price,
-                updated_at=excluded.updated_at
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (club_slug, court_type, day_type, hour) DO UPDATE SET
+                price = EXCLUDED.price,
+                updated_at = EXCLUDED.updated_at
         """, (club_slug, p["court_type"], p["day_type"], p["hour"], p["price"], now))
     conn.commit()
     conn.close()
 
 
 def get_playtomic_price(club_slug, court_type, day_type, hour):
-    """Look up the price for a specific club/court_type/day_type/hour."""
     conn = get_connection()
     c = conn.cursor()
     c.execute("""
         SELECT price FROM playtomic_price_map
-        WHERE club_slug = ? AND court_type = ? AND day_type = ? AND hour = ?
+        WHERE club_slug = %s AND court_type = %s AND day_type = %s AND hour = %s
     """, (club_slug, court_type, day_type, hour))
     row = c.fetchone()
     conn.close()
-    return row["price"] if row else None
+    return row[0] if row else None
 
 
 def get_playtomic_price_map(club_slug):
-    """Get the full price map for a club."""
     conn = get_connection()
     c = conn.cursor()
     c.execute("""
         SELECT court_type, day_type, hour, price, updated_at
         FROM playtomic_price_map
-        WHERE club_slug = ?
+        WHERE club_slug = %s
         ORDER BY court_type, day_type, hour
     """, (club_slug,))
-    rows = c.fetchall()
+    rows = _dictrows(c)
     conn.close()
-    return [dict(r) for r in rows]
+    return rows
 
 
 def save_playtomic_observations(target_date, club_slug, observations, valid_hours=None):
-    """Upsert hourly observations for a Playtomic club.
-
-    observations: list of dicts with keys: court_name, hour, is_booked, price
-    valid_hours: if provided, delete stale observations outside these hours
-    """
     conn = get_connection()
     c = conn.cursor()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Clean up observations for hours that aren't actually bookable
     if valid_hours is not None:
-        placeholders = ",".join("?" * len(valid_hours))
-        c.execute(f"""
+        c.execute("""
             DELETE FROM playtomic_observations
-            WHERE target_date = ? AND club_slug = ? AND hour NOT IN ({placeholders})
-        """, (target_date, club_slug, *valid_hours))
+            WHERE target_date = %s AND club_slug = %s AND hour != ALL(%s)
+        """, (target_date, club_slug, valid_hours))
 
     for obs in observations:
         c.execute("""
             INSERT INTO playtomic_observations (target_date, club_slug, court_name, hour, is_booked, price, observed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(target_date, club_slug, court_name, hour) DO UPDATE SET
-                is_booked=excluded.is_booked,
-                price=excluded.price,
-                observed_at=excluded.observed_at
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (target_date, club_slug, court_name, hour) DO UPDATE SET
+                is_booked = EXCLUDED.is_booked,
+                price = EXCLUDED.price,
+                observed_at = EXCLUDED.observed_at
         """, (target_date, club_slug, obs["court_name"], obs["hour"],
               1 if obs["is_booked"] else 0, obs["price"], now))
     conn.commit()
@@ -365,16 +302,15 @@ def save_playtomic_observations(target_date, club_slug, observations, valid_hour
 
 
 def get_playtomic_daily_summary(target_date, club_slug):
-    """Build daily summary from accumulated hourly observations."""
     conn = get_connection()
     c = conn.cursor()
     c.execute("""
         SELECT court_name, hour, is_booked, price
         FROM playtomic_observations
-        WHERE target_date = ? AND club_slug = ?
+        WHERE target_date = %s AND club_slug = %s
         ORDER BY court_name, hour
     """, (target_date, club_slug))
-    rows = c.fetchall()
+    rows = _dictrows(c)
     conn.close()
 
     if not rows:
@@ -383,7 +319,6 @@ def get_playtomic_daily_summary(target_date, club_slug):
     courts_summary = {}
     total_booked = 0
     total_income = 0.0
-
     for row in rows:
         court = row["court_name"]
         if court not in courts_summary:
@@ -396,11 +331,7 @@ def get_playtomic_daily_summary(target_date, club_slug):
         else:
             courts_summary[court]["available"] += 1
 
-    return {
-        "total_booked": total_booked,
-        "total_income": total_income,
-        "courts_summary": courts_summary,
-    }
+    return {"total_booked": total_booked, "total_income": total_income, "courts_summary": courts_summary}
 
 
 def save_club_pricing(club_slug, pricing_json, raw_html, status="ok", notes=None):
@@ -409,13 +340,13 @@ def save_club_pricing(club_slug, pricing_json, raw_html, status="ok", notes=None
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     c.execute("""
         INSERT INTO club_pricing (club_slug, pricing_json, raw_html, scraped_at, status, notes)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(club_slug) DO UPDATE SET
-            pricing_json=excluded.pricing_json,
-            raw_html=excluded.raw_html,
-            scraped_at=excluded.scraped_at,
-            status=excluded.status,
-            notes=excluded.notes
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT (club_slug) DO UPDATE SET
+            pricing_json = EXCLUDED.pricing_json,
+            raw_html = EXCLUDED.raw_html,
+            scraped_at = EXCLUDED.scraped_at,
+            status = EXCLUDED.status,
+            notes = EXCLUDED.notes
     """, (club_slug, pricing_json, raw_html, now, status, notes))
     conn.commit()
     conn.close()
@@ -424,16 +355,16 @@ def save_club_pricing(club_slug, pricing_json, raw_html, status="ok", notes=None
 def get_club_pricing(club_slug):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT * FROM club_pricing WHERE club_slug = ?", (club_slug,))
-    row = c.fetchone()
+    c.execute("SELECT * FROM club_pricing WHERE club_slug = %s", (club_slug,))
+    row = _dictrow(c)
     conn.close()
-    return dict(row) if row else None
+    return row
 
 
 def get_all_club_pricing():
     conn = get_connection()
     c = conn.cursor()
     c.execute("SELECT club_slug, status, scraped_at, notes FROM club_pricing ORDER BY club_slug")
-    rows = c.fetchall()
+    rows = _dictrows(c)
     conn.close()
-    return [dict(r) for r in rows]
+    return rows
