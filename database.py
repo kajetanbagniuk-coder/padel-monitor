@@ -14,6 +14,22 @@ def get_connection():
 
 
 def init_db():
+    # Check if existing database is healthy; if corrupted, remove and recreate
+    if os.path.exists(DB_PATH):
+        try:
+            test_conn = sqlite3.connect(DB_PATH, timeout=10)
+            test_conn.execute("PRAGMA integrity_check")
+            test_conn.close()
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning(f"Database corrupted, recreating: {DB_PATH}")
+            os.remove(DB_PATH)
+            # Also remove WAL/SHM files if present
+            for suffix in ["-wal", "-shm"]:
+                path = DB_PATH + suffix
+                if os.path.exists(path):
+                    os.remove(path)
+
     conn = get_connection()
     c = conn.cursor()
     c.execute("""
