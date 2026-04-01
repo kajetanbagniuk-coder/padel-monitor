@@ -98,6 +98,18 @@ def init_db():
             PRIMARY KEY (target_date, club_slug, court_name, hour)
         )
     """)
+    # Playtomic price map: per-club, per-court-type, per-day-type, per-hour pricing
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS playtomic_price_map (
+            club_slug TEXT NOT NULL,
+            court_type TEXT NOT NULL,
+            day_type TEXT NOT NULL,
+            hour INTEGER NOT NULL,
+            price REAL NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (club_slug, court_type, day_type, hour)
+        )
+    """)
     c.execute("CREATE INDEX IF NOT EXISTS idx_bookings_date_club ON bookings(target_date, club_slug)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_snapshot_date_club ON daily_snapshot(target_date, club_slug)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_ptobs_date_club ON playtomic_observations(target_date, club_slug)")
@@ -268,6 +280,54 @@ def get_aggregated_range(start_date, end_date, city=None):
         "clubs": clubs,
         "total_income": total_income,
     }
+
+
+def save_playtomic_prices(club_slug, prices):
+    """Upsert price map entries for a Playtomic club.
+
+    prices: list of dicts with keys: court_type, day_type, hour, price
+    """
+    conn = get_connection()
+    c = conn.cursor()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    for p in prices:
+        c.execute("""
+            INSERT INTO playtomic_price_map (club_slug, court_type, day_type, hour, price, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(club_slug, court_type, day_type, hour) DO UPDATE SET
+                price=excluded.price,
+                updated_at=excluded.updated_at
+        """, (club_slug, p["court_type"], p["day_type"], p["hour"], p["price"], now))
+    conn.commit()
+    conn.close()
+
+
+def get_playtomic_price(club_slug, court_type, day_type, hour):
+    """Look up the price for a specific club/court_type/day_type/hour."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+        SELECT price FROM playtomic_price_map
+        WHERE club_slug = ? AND court_type = ? AND day_type = ? AND hour = ?
+    """, (club_slug, court_type, day_type, hour))
+    row = c.fetchone()
+    conn.close()
+    return row["price"] if row else None
+
+
+def get_playtomic_price_map(club_slug):
+    """Get the full price map for a club."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+        SELECT court_type, day_type, hour, price, updated_at
+        FROM playtomic_price_map
+        WHERE club_slug = ?
+        ORDER BY court_type, day_type, hour
+    """, (club_slug,))
+    rows = c.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 def save_playtomic_observations(target_date, club_slug, observations):

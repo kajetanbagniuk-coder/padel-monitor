@@ -10,16 +10,23 @@ Strategy:
   - Future slots NOT in the available list = booked (grey squares)
   - Past slots = already captured by earlier :45 observations
   - Build full daily picture from accumulated hourly observations
+
+Pricing:
+  - Price map built from future availability (all slots visible with prices)
+  - Per club, per court type (single/double x indoor/outdoor), per day type
+    (weekday/weekend), per hour
+  - Updated weekly or when fully-available courts reveal new prices
 """
 
 import requests
 import json
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from database import (save_playtomic_observations, get_playtomic_daily_summary,
-                      save_daily_snapshot)
+                      save_daily_snapshot, save_playtomic_prices,
+                      get_playtomic_price)
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +92,140 @@ def generate_hourly_slots(open_h, close_h):
     return list(range(open_h, close_h))
 
 
+def classify_court(resource):
+    """Classify a court by type using API properties."""
+    props = resource.get("properties", {})
+    size = props.get("resource_size", "double")  # single or double
+    location = props.get("resource_type", "indoor")  # indoor or outdoor
+    return f"{size}_{location}"
+
+
+def get_day_type(date_str):
+    """Return 'weekend' for Sat/Sun, 'weekday' otherwise."""
+    dt = datetime.strptime(date_str, "%Y-%m-%d")
+    return "weekend" if dt.weekday() >= 5 else "weekday"
+
+
+def build_price_map(club_slug, clubs_dict=None):
+    """Build the price map for a club by scraping a future weekday and weekend day.
+
+    Picks the next Wednesday (weekday) and next Saturday (weekend) to get
+    full availability with prices for all court types.
+    """
+    if clubs_dict is None:
+        from clubs import CLUBS
+        clubs_dict = CLUBS
+    club = clubs_dict.get(club_slug)
+    if not club or not club.get("playtomic_id"):
+        return None
+
+    tenant_id = club["playtomic_id"]
+    tenant_info = get_tenant_info(tenant_id)
+    if not tenant_info:
+        return None
+
+    # Pick future dates: next Wednesday and next Saturday
+    today = datetime.now()
+    # Find next Wednesday (weekday=2)
+    days_until_wed = (2 - today.weekday()) % 7
+    if days_until_wed == 0:
+        days_until_wed = 7
+    weekday_date = (today + timedelta(days=days_until_wed)).strftime("%Y-%m-%d")
+    # Find next Saturday (weekday=5)
+    days_until_sat = (5 - today.weekday()) % 7
+    if days_until_sat == 0:
+        days_until_sat = 7
+    weekend_date = (today + timedelta(days=days_until_sat)).strftime("%Y-%m-%d")
+
+    # Build resource info: resource_id -> (name, court_type)
+    resource_info = {}
+    for r in tenant_info.get("resources", []):
+        if r.get("sport_id") == "PADEL" and r.get("is_active", True):
+            resource_info[r["resource_id"]] = {
+                "name": r["name"].strip(),
+                "court_type": classify_court(r),
+            }
+
+    if not resource_info:
+        return None
+
+    prices_to_save = []
+    total_prices = 0
+
+    for date_str, day_type in [(weekday_date, "weekday"), (weekend_date, "weekend")]:
+        availability = get_availability(tenant_id, date_str)
+        if not availability:
+            continue
+
+        for entry in availability:
+            rid = entry["resource_id"]
+            if rid not in resource_info:
+                continue
+            court_type = resource_info[rid]["court_type"]
+
+            for slot in entry.get("slots", []):
+                duration = slot["duration"]
+                if duration != 60:
+                    continue  # Only use 60-min slots for exact hourly pricing
+                start_h = int(slot["start_time"].split(":")[0])
+                price_str = slot.get("price", "0 PLN")
+                price = float(price_str.replace(",", ".").split()[0])
+
+                prices_to_save.append({
+                    "court_type": court_type,
+                    "day_type": day_type,
+                    "hour": start_h,
+                    "price": price,
+                })
+                total_prices += 1
+
+    if prices_to_save:
+        save_playtomic_prices(club_slug, prices_to_save)
+        logger.info(f"Price map built for {club_slug}: {total_prices} entries")
+
+    return total_prices
+
+
+def build_all_price_maps(clubs_dict=None):
+    """Build price maps for all Playtomic clubs."""
+    if clubs_dict is None:
+        from clubs import CLUBS
+        clubs_dict = CLUBS
+    playtomic_slugs = [slug for slug, c in clubs_dict.items()
+                       if c.get("booking_system") in ("playtomic", "both")]
+    logger.info(f"Building price maps for {len(playtomic_slugs)} Playtomic clubs...")
+    ok = 0
+    for slug in playtomic_slugs:
+        try:
+            count = build_price_map(slug, clubs_dict)
+            if count:
+                ok += 1
+        except Exception as e:
+            logger.error(f"Price map failed for {slug}: {e}")
+        time.sleep(1)
+    logger.info(f"Price maps done: {ok}/{len(playtomic_slugs)} clubs")
+    return ok
+
+
+def get_price_for_slot(club_slug, court_type, day_type, hour):
+    """Look up price from the map, with fallbacks."""
+    # Exact match
+    price = get_playtomic_price(club_slug, court_type, day_type, hour)
+    if price is not None:
+        return price
+    # Try same court_type, opposite day_type (better than nothing)
+    other_day = "weekend" if day_type == "weekday" else "weekday"
+    price = get_playtomic_price(club_slug, court_type, other_day, hour)
+    if price is not None:
+        return price
+    # Try double_indoor as default court type
+    if court_type != "double_indoor":
+        price = get_playtomic_price(club_slug, "double_indoor", day_type, hour)
+        if price is not None:
+            return price
+    return None
+
+
 def scrape_playtomic_hourly(date_str, club_slug, clubs_dict=None):
     """
     Hourly Playtomic scrape — called at XX:45.
@@ -115,64 +256,81 @@ def scrape_playtomic_hourly(date_str, club_slug, clubs_dict=None):
     open_h, close_h = parse_opening_hours(tenant_info, date_str)
     schedule_hours = generate_hourly_slots(open_h, close_h)
 
-    # Current hour — only observe from this hour onwards
+    # Current hour — only observe from this hour onwards for today
     now = datetime.now()
-    current_hour = now.hour
-
-    # Filter: only hours >= current hour (future + current)
-    # For dates other than today, observe all hours (historical or future date)
     today_str = now.strftime("%Y-%m-%d")
     if date_str == today_str:
+        current_hour = now.hour
         observable_hours = [h for h in schedule_hours if h >= current_hour]
-        # Handle wrap-around (club open past midnight)
         if close_h <= open_h and current_hour < open_h:
             observable_hours = [h for h in schedule_hours if h >= current_hour or h < close_h]
     else:
         observable_hours = schedule_hours
 
-    # Build resource map
-    resource_map = {}
+    # Build resource map with court type classification
+    resource_info = {}
     for r in tenant_info.get("resources", []):
         if r.get("sport_id") == "PADEL" and r.get("is_active", True):
-            resource_map[r["resource_id"]] = r["name"].strip()
+            resource_info[r["resource_id"]] = {
+                "name": r["name"].strip(),
+                "court_type": classify_court(r),
+            }
 
-    if not resource_map:
+    if not resource_info:
         logger.warning(f"No active padel courts for {club_slug}")
         return None
+
+    # Day type for price lookup
+    day_type = get_day_type(date_str)
 
     # Build availability map: resource_id -> set of available hours + prices
     avail_hours = {}
     avail_prices = {}
+    prices_for_map = []
+
     for entry in availability:
         rid = entry["resource_id"]
-        if rid not in resource_map:
+        if rid not in resource_info:
             continue
+        court_type = resource_info[rid]["court_type"]
         avail_hours.setdefault(rid, set())
         avail_prices.setdefault(rid, {})
+
         for slot in entry.get("slots", []):
             start_h = int(slot["start_time"].split(":")[0])
+            start_m = int(slot["start_time"].split(":")[1])
             duration = slot["duration"]
             price_str = slot.get("price", "0 PLN")
             price = float(price_str.replace(",", ".").split()[0])
-            hourly_price = round(price / (duration / 60), 2)
 
             avail_hours[rid].add(start_h)
-            if start_h not in avail_prices[rid] or duration == 60:
-                avail_prices[rid][start_h] = hourly_price
 
-            # Longer slots mark subsequent hours as available too
-            if int(slot["start_time"].split(":")[1]) == 0 and duration >= 120:
+            # Record exact 60-min prices for the price map
+            if duration == 60:
+                avail_prices[rid][start_h] = price
+                prices_for_map.append({
+                    "court_type": court_type,
+                    "day_type": day_type,
+                    "hour": start_h,
+                    "price": price,
+                })
+
+            # Longer slots mark subsequent hours as available
+            if start_m == 0 and duration >= 120:
                 for extra in range(1, duration // 60):
                     extra_h = (start_h + extra) % 24
                     avail_hours[rid].add(extra_h)
 
-    # Build observations for current + future hours only
+    # Update price map with any new prices we found
+    if prices_for_map:
+        save_playtomic_prices(club_slug, prices_for_map)
+
+    # Build observations
     observations = []
-    for rid, court_name in resource_map.items():
+    for rid, info in resource_info.items():
+        court_name = info["name"]
+        court_type = info["court_type"]
         court_avail = avail_hours.get(rid, set())
-        court_prices = avail_prices.get(rid, {})
-        all_prices = list(court_prices.values())
-        default_price = sum(all_prices) / len(all_prices) if all_prices else 150.0
 
         for hour in observable_hours:
             if hour in court_avail:
@@ -180,18 +338,16 @@ def scrape_playtomic_hourly(date_str, club_slug, clubs_dict=None):
                 price = 0.0
             else:
                 is_booked = True
-                # Estimate price from nearby available slots
-                price = default_price
-                for offset in range(0, 4):
-                    found = False
-                    for direction in [offset, -offset]:
-                        check_h = (hour + direction) % 24
-                        if check_h in court_prices:
-                            price = court_prices[check_h]
-                            found = True
-                            break
-                    if found:
-                        break
+                # Look up price from the map
+                price = get_price_for_slot(club_slug, court_type, day_type, hour)
+                if price is None:
+                    # Fallback: use price from available slots on this court
+                    court_prices = avail_prices.get(rid, {})
+                    if court_prices:
+                        all_p = list(court_prices.values())
+                        price = sum(all_p) / len(all_p)
+                    else:
+                        price = 150.0  # last resort default
 
             observations.append({
                 "court_name": court_name,
@@ -218,13 +374,10 @@ def scrape_playtomic_hourly(date_str, club_slug, clubs_dict=None):
             club_slug,
         )
 
-    booked_now = sum(1 for o in observations if o["is_booked"])
-    income_now = sum(o["price"] for o in observations if o["is_booked"])
-    total_booked = summary["total_booked"] if summary else booked_now
-    total_income = summary["total_income"] if summary else income_now
+    total_booked = summary["total_booked"] if summary else 0
+    total_income = summary["total_income"] if summary else 0
 
-    logger.info(f"Playtomic {club_slug} {date_str}: observed {len(observations)} slots, "
-                f"daily total: {total_booked} booked, {total_income:.2f} PLN")
+    logger.info(f"Playtomic {club_slug} {date_str}: {total_booked} booked, {total_income:.2f} PLN")
 
     return {
         "date": date_str,

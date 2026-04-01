@@ -17,7 +17,7 @@ from database import (init_db, get_latest_snapshot_for_date, get_income_range,
                       get_all_snapshots_for_date, get_club_pricing, get_all_club_pricing,
                       get_aggregated_daily, get_aggregated_range)
 from scraper import scrape_date
-from playtomic_scraper import scrape_playtomic_hourly
+from playtomic_scraper import scrape_playtomic_hourly, build_all_price_maps
 from pricing_scraper import scrape_club_pricing, scrape_all_pricing
 from clubs import CLUBS, DEFAULT_CLUB
 
@@ -127,6 +127,16 @@ def scheduled_pricing_scrape():
         logger.error(f"Weekly pricing scrape failed: {e}")
 
 
+def scheduled_playtomic_price_maps():
+    """Weekly rebuild of Playtomic price maps from future availability."""
+    logger.info("Rebuilding Playtomic price maps...")
+    try:
+        ok = build_all_price_maps()
+        logger.info(f"Playtomic price maps rebuilt: {ok} clubs")
+    except Exception as e:
+        logger.error(f"Playtomic price map rebuild failed: {e}")
+
+
 # Kluby.org: today + 7 days ahead at 10:00, 18:00, 23:40
 scheduler.add_job(scheduled_scrape_kluby, "cron", hour=10, minute=0, id="kluby_10am")
 scheduler.add_job(scheduled_scrape_kluby, "cron", hour=18, minute=0, id="kluby_6pm")
@@ -139,6 +149,8 @@ scheduler.add_job(scheduled_scrape_playtomic_future, "cron", hour=18, minute=0, 
 scheduler.add_job(scheduled_scrape_playtomic_future, "cron", hour=23, minute=40, id="playtomic_future_1140pm")
 # Weekly pricing re-scrape: Monday 3 AM
 scheduler.add_job(scheduled_pricing_scrape, "cron", day_of_week="mon", hour=3, minute=0, id="pricing_weekly")
+# Weekly Playtomic price maps: Monday 4 AM
+scheduler.add_job(scheduled_playtomic_price_maps, "cron", day_of_week="mon", hour=4, minute=0, id="playtomic_prices_weekly")
 
 
 # ── Routes ─────────────────────────────────────────────────────────
@@ -368,14 +380,28 @@ def _startup_pricing_scrape():
         logger.info(f"Club pricing table has {len(all_pricing)} entries, skipping auto-scrape.")
 
 
+def _startup_playtomic_prices():
+    """Build Playtomic price maps if not yet populated."""
+    from database import get_playtomic_price_map
+    # Check if any price map exists
+    test = get_playtomic_price_map("interpadel-warszawa")
+    if not test:
+        logger.info("Playtomic price maps empty - building from future availability...")
+        build_all_price_maps()
+        logger.info("Initial Playtomic price map build complete.")
+    else:
+        logger.info("Playtomic price maps already populated, skipping.")
+
+
 # ── Initialization (runs under both gunicorn and local dev) ───────
 import threading
 
 init_db()
 scheduler.start()
 logger.info("App started. Scraping will run on schedule (kluby: 10/18/23:40, playtomic: every :45).")
-# Only run pricing scrape on startup if table is empty (lightweight check)
+# Build price data on startup if missing
 threading.Thread(target=_startup_pricing_scrape, daemon=True).start()
+threading.Thread(target=_startup_playtomic_prices, daemon=True).start()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
