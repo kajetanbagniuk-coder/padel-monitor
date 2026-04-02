@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Loba Padel - Income Monitor</title>
+    <title>Padel Market Monitor</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -20,20 +20,11 @@
             justify-content: space-between;
             align-items: center;
         }
-        .header h1 {
-            font-size: 24px;
-            color: #2ecc71;
-        }
-        .header .status {
-            font-size: 13px;
-            color: #888;
-        }
+        .header h1 { font-size: 24px; color: #2ecc71; }
+        .header .status { font-size: 13px; color: #888; }
         .header .status .dot {
-            display: inline-block;
-            width: 8px; height: 8px;
-            border-radius: 50%;
-            background: #2ecc71;
-            margin-right: 5px;
+            display: inline-block; width: 8px; height: 8px;
+            border-radius: 50%; background: #2ecc71; margin-right: 5px;
         }
         .controls {
             background: #1a2a3a;
@@ -53,11 +44,8 @@
             font-size: 14px;
             transition: all 0.2s;
         }
-        .tab-btn.active, .tab-btn:hover {
-            background: #2ecc71;
-            color: #0f1923;
-        }
-        .club-picker {
+        .tab-btn.active, .tab-btn:hover { background: #2ecc71; color: #0f1923; }
+        .picker {
             padding: 8px 12px;
             border: 1px solid #2ecc71;
             background: #0f1923;
@@ -67,8 +55,8 @@
             cursor: pointer;
             font-weight: 600;
         }
-        .club-picker:hover { background: #1a3a2a; }
-        .controls input[type="date"], .controls input[type="month"], .controls input[type="week"] {
+        .picker:hover { background: #1a3a2a; }
+        .controls input[type="date"], .controls input[type="month"] {
             padding: 8px 12px;
             border: 1px solid #334;
             background: #0f1923;
@@ -76,28 +64,9 @@
             border-radius: 8px;
             font-size: 14px;
         }
-        .btn-scrape {
-            padding: 8px 20px;
-            border: 1px solid #e67e22;
-            background: transparent;
-            color: #e67e22;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: all 0.2s;
-            margin-left: auto;
-        }
-        .btn-scrape:hover {
-            background: #e67e22;
-            color: #0f1923;
-        }
-        .btn-scrape:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
         .main { padding: 30px; }
 
-        /* Big income card */
+        /* Income hero card */
         .income-hero {
             background: linear-gradient(135deg, #1a3a2a 0%, #0d2a1a 100%);
             border: 1px solid #2ecc7155;
@@ -107,384 +76,311 @@
             margin-bottom: 30px;
         }
         .income-hero .label {
-            font-size: 14px;
-            color: #888;
-            text-transform: uppercase;
-            letter-spacing: 2px;
+            font-size: 14px; color: #888;
+            text-transform: uppercase; letter-spacing: 2px;
         }
         .income-hero .amount {
-            font-size: 56px;
-            font-weight: 700;
-            color: #2ecc71;
-            margin: 10px 0;
+            font-size: 56px; font-weight: 700; color: #2ecc71; margin: 10px 0;
         }
-        .income-hero .sub {
-            font-size: 16px;
-            color: #aaa;
-        }
+        .income-hero .sub { font-size: 16px; color: #aaa; }
 
         /* Stats grid */
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
             gap: 20px;
             margin-bottom: 30px;
         }
         .stat-card {
-            background: #1a2a3a;
-            border-radius: 12px;
-            padding: 20px;
-            text-align: center;
+            background: #1a2a3a; border-radius: 12px;
+            padding: 20px; text-align: center;
         }
-        .stat-card .stat-value {
-            font-size: 28px;
-            font-weight: 700;
-            color: #3498db;
-        }
+        .stat-card .stat-value { font-size: 28px; font-weight: 700; color: #3498db; }
         .stat-card .stat-label {
-            font-size: 12px;
-            color: #888;
-            margin-top: 5px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            font-size: 12px; color: #888; margin-top: 5px;
+            text-transform: uppercase; letter-spacing: 1px;
         }
 
-        /* Courts breakdown */
-        .courts-section h2 {
-            font-size: 18px;
-            color: #ccc;
-            margin-bottom: 15px;
-        }
-        .courts-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 12px;
-            margin-bottom: 30px;
-        }
-        .court-card {
-            background: #1a2a3a;
-            border-radius: 10px;
-            padding: 15px;
-            border-left: 3px solid #2ecc71;
-        }
-        .court-card .court-name {
-            font-size: 14px;
-            font-weight: 600;
-            color: #e0e0e0;
-            margin-bottom: 8px;
-        }
-        .court-card .court-income {
-            font-size: 22px;
-            font-weight: 700;
-            color: #2ecc71;
-        }
-        .court-card .court-slots {
-            font-size: 12px;
-            color: #888;
-            margin-top: 4px;
-        }
-
-        /* Weekly chart */
-        .week-chart {
+        /* Timeline chart (date coverage) */
+        .timeline-section { margin-bottom: 30px; }
+        .timeline-section h2 { font-size: 18px; color: #ccc; margin-bottom: 15px; }
+        .timeline-chart {
             display: flex;
-            gap: 8px;
+            gap: 3px;
             align-items: flex-end;
-            height: 200px;
+            height: 180px;
             background: #1a2a3a;
             border-radius: 12px;
             padding: 20px;
-            margin-bottom: 30px;
+            overflow-x: auto;
         }
-        .week-chart .bar-wrapper {
+        .timeline-bar-wrapper {
             flex: 1;
+            min-width: 28px;
             display: flex;
             flex-direction: column;
             align-items: center;
             height: 100%;
             justify-content: flex-end;
+            cursor: pointer;
         }
-        .week-chart .bar {
+        .timeline-bar {
             width: 100%;
-            max-width: 60px;
-            background: linear-gradient(to top, #2ecc71, #27ae60);
-            border-radius: 6px 6px 0 0;
+            max-width: 40px;
+            border-radius: 4px 4px 0 0;
             min-height: 2px;
-            transition: height 0.5s;
+            transition: height 0.3s, opacity 0.2s;
         }
-        .week-chart .bar-label {
-            font-size: 11px;
-            color: #888;
-            margin-top: 8px;
+        .timeline-bar.past { background: linear-gradient(to top, #3498db, #2980b9); }
+        .timeline-bar.today { background: linear-gradient(to top, #e67e22, #d35400); }
+        .timeline-bar.future { background: linear-gradient(to top, #2ecc71, #27ae60); opacity: 0.7; }
+        .timeline-bar-wrapper:hover .timeline-bar { opacity: 1; filter: brightness(1.3); }
+        .timeline-bar-wrapper.selected .timeline-bar { box-shadow: 0 0 8px rgba(46, 204, 113, 0.6); }
+        .timeline-label {
+            font-size: 10px; color: #666; margin-top: 6px;
+            white-space: nowrap; text-align: center;
         }
-        .week-chart .bar-value {
-            font-size: 11px;
-            color: #2ecc71;
-            margin-bottom: 4px;
+        .timeline-value {
+            font-size: 9px; color: #888; margin-bottom: 3px;
+            white-space: nowrap;
         }
-
-        /* Snapshots timeline */
-        .snapshots-section h2 {
-            font-size: 18px;
-            color: #ccc;
-            margin-bottom: 15px;
+        .timeline-legend {
+            display: flex; gap: 20px; margin-top: 10px; justify-content: center;
         }
-        .snapshot-timeline {
-            display: flex;
-            gap: 15px;
-            overflow-x: auto;
-            padding-bottom: 10px;
+        .timeline-legend span {
+            font-size: 12px; color: #888; display: flex; align-items: center; gap: 6px;
         }
-        .snapshot-card {
-            min-width: 150px;
-            background: #1a2a3a;
-            border-radius: 10px;
-            padding: 15px;
-            text-align: center;
-            flex-shrink: 0;
-        }
-        .snapshot-card .snap-time {
-            font-size: 12px;
-            color: #888;
-        }
-        .snapshot-card .snap-income {
-            font-size: 20px;
-            font-weight: 700;
-            color: #2ecc71;
-            margin: 5px 0;
-        }
-        .snapshot-card .snap-slots {
-            font-size: 12px;
-            color: #aaa;
+        .timeline-legend .dot-legend {
+            width: 10px; height: 10px; border-radius: 3px; display: inline-block;
         }
 
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #888;
-        }
-        .no-data {
-            text-align: center;
-            padding: 40px;
-            color: #666;
-            font-style: italic;
-        }
-
-        /* Monthly calendar grid */
-        .month-grid {
-            display: grid;
-            grid-template-columns: repeat(7, 1fr);
-            gap: 4px;
-            margin-bottom: 30px;
-        }
-        .month-grid .day-header {
-            text-align: center;
-            font-size: 12px;
-            color: #888;
-            padding: 8px;
-        }
-        .month-grid .day-cell {
-            background: #1a2a3a;
-            border-radius: 8px;
-            padding: 8px;
-            min-height: 60px;
-            text-align: center;
-        }
-        .month-grid .day-cell.empty { background: transparent; }
-        .month-grid .day-cell .day-num {
-            font-size: 12px;
-            color: #888;
-        }
-        .month-grid .day-cell .day-income {
-            font-size: 14px;
-            font-weight: 700;
-            color: #2ecc71;
-            margin-top: 4px;
-        }
-        .month-grid .day-cell.has-data { border: 1px solid #2ecc7133; }
-        .month-grid .day-cell.today { border: 1px solid #e67e22; }
-
-        /* Club pricing card */
-        .club-card {
-            background: #1a2a3a;
-            border-left: 4px solid #3498db;
-            border-radius: 12px;
-            padding: 20px 25px;
-            margin: 0 30px 20px 30px;
-            display: flex;
-            gap: 30px;
-            align-items: flex-start;
-            flex-wrap: wrap;
-        }
-        .club-card .club-info {
-            min-width: 180px;
-        }
-        .club-card .club-info .club-name {
-            font-size: 18px;
-            font-weight: 700;
-            color: #e0e0e0;
-        }
-        .club-card .club-info .club-meta {
-            font-size: 13px;
-            color: #888;
-            margin-top: 4px;
-        }
-        .club-card .pricing-badge {
-            display: inline-block;
-            padding: 3px 10px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 600;
-            margin-top: 8px;
-        }
-        .club-card .pricing-badge.per-club {
-            background: #2ecc7122;
-            color: #2ecc71;
-            border: 1px solid #2ecc7144;
-        }
-        .club-card .pricing-badge.generic {
-            background: #e67e2222;
-            color: #e67e22;
-            border: 1px solid #e67e2244;
-        }
-        .club-card .pricing-table {
-            flex: 1;
-            min-width: 300px;
-        }
-        .club-card .pricing-table table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13px;
-        }
-        .club-card .pricing-table th {
-            text-align: left;
-            color: #888;
-            font-weight: 600;
-            padding: 4px 10px;
-            border-bottom: 1px solid #334;
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        .club-card .pricing-table td {
-            padding: 5px 10px;
-            color: #ccc;
-            border-bottom: 1px solid #1a2a3a;
-        }
-        .club-card .pricing-table td.price {
-            color: #2ecc71;
-            font-weight: 700;
-            text-align: right;
-        }
-
-        /* Aggregated club ranking table */
+        /* Clubs ranking table */
         .agg-table {
             width: 100%;
             border-collapse: collapse;
             margin-bottom: 30px;
         }
         .agg-table th {
-            text-align: left;
-            color: #888;
-            font-weight: 600;
+            text-align: left; color: #888; font-weight: 600;
             padding: 10px 12px;
             border-bottom: 2px solid #2ecc7155;
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
+            position: sticky; top: 0; background: #0f1923;
         }
-        .agg-table th:last-child, .agg-table td:last-child {
-            text-align: right;
-        }
+        .agg-table th:last-child, .agg-table td:last-child { text-align: right; }
         .agg-table td {
-            padding: 10px 12px;
-            color: #ccc;
-            border-bottom: 1px solid #1a2a3a;
-            font-size: 14px;
+            padding: 10px 12px; color: #ccc;
+            border-bottom: 1px solid #1a2a3a; font-size: 14px;
         }
-        .agg-table tr:hover {
-            background: #1a3a2a;
-            cursor: pointer;
-        }
-        .agg-table td.income {
-            color: #2ecc71;
-            font-weight: 700;
-        }
-        .agg-table .rank {
-            color: #888;
-            font-size: 12px;
+        .agg-table tr:hover { background: #1a3a2a; cursor: pointer; }
+        .agg-table td.income { color: #2ecc71; font-weight: 700; }
+        .agg-table .rank { color: #888; font-size: 12px; }
+        .agg-table .sys-badge {
+            font-size: 0.7em; font-weight: 600; padding: 2px 6px;
+            border-radius: 8px;
         }
 
         /* City summary cards */
         .city-cards {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 30px;
+            gap: 15px; margin-bottom: 30px;
         }
         .city-card {
-            background: #1a2a3a;
-            border-radius: 12px;
-            padding: 18px;
-            border-left: 3px solid #3498db;
+            background: #1a2a3a; border-radius: 12px;
+            padding: 18px; border-left: 3px solid #3498db;
         }
-        .city-card .city-name {
-            font-size: 15px;
-            font-weight: 700;
-            color: #e0e0e0;
-            margin-bottom: 6px;
+        .city-card .city-name { font-size: 15px; font-weight: 700; color: #e0e0e0; margin-bottom: 6px; }
+        .city-card .city-income { font-size: 22px; font-weight: 700; color: #2ecc71; }
+        .city-card .city-meta { font-size: 12px; color: #888; margin-top: 4px; }
+
+        /* Courts breakdown (single club view) */
+        .courts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px; margin-bottom: 30px;
         }
-        .city-card .city-income {
-            font-size: 22px;
-            font-weight: 700;
-            color: #2ecc71;
+        .court-card {
+            background: #1a2a3a; border-radius: 10px;
+            padding: 15px; border-left: 3px solid #2ecc71;
         }
-        .city-card .city-meta {
-            font-size: 12px;
-            color: #888;
-            margin-top: 4px;
+        .court-card .court-name { font-size: 14px; font-weight: 600; color: #e0e0e0; margin-bottom: 8px; }
+        .court-card .court-income { font-size: 22px; font-weight: 700; color: #2ecc71; }
+        .court-card .court-slots { font-size: 12px; color: #888; margin-top: 4px; }
+
+        /* Snapshots timeline */
+        .snapshot-timeline {
+            display: flex; gap: 15px; overflow-x: auto; padding-bottom: 10px;
         }
+        .snapshot-card {
+            min-width: 150px; background: #1a2a3a;
+            border-radius: 10px; padding: 15px;
+            text-align: center; flex-shrink: 0;
+        }
+        .snapshot-card .snap-time { font-size: 12px; color: #888; }
+        .snapshot-card .snap-income { font-size: 20px; font-weight: 700; color: #2ecc71; margin: 5px 0; }
+        .snapshot-card .snap-slots { font-size: 12px; color: #aaa; }
+
+        /* Weekly bar chart */
+        .week-chart {
+            display: flex; gap: 8px; align-items: flex-end;
+            height: 200px; background: #1a2a3a;
+            border-radius: 12px; padding: 20px; margin-bottom: 30px;
+        }
+        .week-chart .bar-wrapper {
+            flex: 1; display: flex; flex-direction: column;
+            align-items: center; height: 100%; justify-content: flex-end;
+        }
+        .week-chart .bar {
+            width: 100%; max-width: 60px;
+            background: linear-gradient(to top, #2ecc71, #27ae60);
+            border-radius: 6px 6px 0 0; min-height: 2px; transition: height 0.5s;
+        }
+        .week-chart .bar-label { font-size: 11px; color: #888; margin-top: 8px; }
+        .week-chart .bar-value { font-size: 11px; color: #2ecc71; margin-bottom: 4px; }
+
+        /* Monthly calendar */
+        .month-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px; margin-bottom: 30px;
+        }
+        .month-grid .day-header { text-align: center; font-size: 12px; color: #888; padding: 8px; }
+        .month-grid .day-cell {
+            background: #1a2a3a; border-radius: 8px;
+            padding: 8px; min-height: 60px; text-align: center;
+        }
+        .month-grid .day-cell.empty { background: transparent; }
+        .month-grid .day-cell .day-num { font-size: 12px; color: #888; }
+        .month-grid .day-cell .day-income { font-size: 14px; font-weight: 700; color: #2ecc71; margin-top: 4px; }
+        .month-grid .day-cell.has-data { border: 1px solid #2ecc7133; }
+        .month-grid .day-cell.today { border: 1px solid #e67e22; }
+
+        /* Club pricing card */
+        .club-card {
+            background: #1a2a3a; border-left: 4px solid #3498db;
+            border-radius: 12px; padding: 20px 25px;
+            margin-bottom: 20px; display: flex;
+            gap: 30px; align-items: flex-start; flex-wrap: wrap;
+        }
+        .club-card .club-info { min-width: 180px; }
+        .club-card .club-info .club-name { font-size: 18px; font-weight: 700; color: #e0e0e0; }
+        .club-card .club-info .club-meta { font-size: 13px; color: #888; margin-top: 4px; }
+        .club-card .pricing-badge {
+            display: inline-block; padding: 3px 10px;
+            border-radius: 12px; font-size: 11px; font-weight: 600; margin-top: 8px;
+        }
+        .club-card .pricing-badge.per-club { background: #2ecc7122; color: #2ecc71; border: 1px solid #2ecc7144; }
+        .club-card .pricing-badge.generic { background: #e67e2222; color: #e67e22; border: 1px solid #e67e2244; }
+        .club-card .pricing-table { flex: 1; min-width: 300px; }
+        .club-card .pricing-table table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .club-card .pricing-table th {
+            text-align: left; color: #888; font-weight: 600;
+            padding: 4px 10px; border-bottom: 1px solid #334;
+            font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+        }
+        .club-card .pricing-table td { padding: 5px 10px; color: #ccc; border-bottom: 1px solid #1a2a3a; }
+        .club-card .pricing-table td.price { color: #2ecc71; font-weight: 700; text-align: right; }
+
+        .no-data { text-align: center; padding: 40px; color: #666; font-style: italic; }
+        .section-title { font-size: 18px; color: #ccc; margin-bottom: 15px; }
+
+        /* Back button */
+        .back-btn {
+            padding: 6px 16px; border: 1px solid #3498db;
+            background: transparent; color: #3498db;
+            border-radius: 20px; cursor: pointer; font-size: 13px;
+            transition: all 0.2s; margin-right: 10px;
+        }
+        .back-btn:hover { background: #3498db; color: #0f1923; }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1 id="header-title">Padel Income Monitor</h1>
+        <h1 id="header-title">Padel Market Monitor</h1>
         <div class="status">
             <span class="dot"></span>
-            Next scrape: <span id="next-scrape">--</span> |
-            Last update: <span id="last-update">--</span>
+            <span id="status-text">Loading...</span>
         </div>
     </div>
 
-    <div class="controls">
-        <select id="city-picker" class="club-picker" style="max-width:150px;"></select>
-        <select id="club-picker" class="club-picker"></select>
+    <div class="controls" id="controls">
+        <select id="city-picker" class="picker" style="max-width:160px;"></select>
+        <select id="club-picker" class="picker" style="display:none;"></select>
         <span style="color:#444;">|</span>
-        <button class="tab-btn active" data-tab="daily">Daily</button>
+        <button class="tab-btn active" data-tab="overview">Overview</button>
+        <button class="tab-btn" data-tab="daily">Daily</button>
         <button class="tab-btn" data-tab="weekly">Weekly</button>
         <button class="tab-btn" data-tab="monthly">Monthly</button>
-        <button class="tab-btn" data-tab="aggregated">All Clubs</button>
         <input type="date" id="date-picker" />
-        <button class="btn-scrape" id="btn-scrape">Scrape Now</button>
     </div>
 
     <div class="main">
-        <!-- Daily View -->
-        <div id="view-daily" class="view">
+        <!-- OVERVIEW: Market-wide view (default) -->
+        <div id="view-overview" class="view">
+            <div class="income-hero">
+                <div class="label" id="ov-label">Market Overview</div>
+                <div class="amount" id="ov-amount">-- PLN</div>
+                <div class="sub" id="ov-sub"></div>
+            </div>
+            <div class="stats-grid" id="ov-stats"></div>
+
+            <!-- Date coverage timeline -->
+            <div class="timeline-section">
+                <h2 class="section-title">Data Coverage (All Dates)</h2>
+                <div class="timeline-chart" id="timeline-chart"></div>
+                <div class="timeline-legend">
+                    <span><span class="dot-legend" style="background:#3498db;"></span> Past</span>
+                    <span><span class="dot-legend" style="background:#e67e22;"></span> Today</span>
+                    <span><span class="dot-legend" style="background:#2ecc71;"></span> Future</span>
+                </div>
+            </div>
+
+            <!-- Club ranking for selected date -->
+            <div>
+                <h2 class="section-title" id="ov-table-title">Club Ranking</h2>
+                <table class="agg-table" id="ov-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Club Name</th>
+                            <th>City</th>
+                            <th>Src</th>
+                            <th>Courts</th>
+                            <th>Booked</th>
+                            <th>Income (PLN)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ov-table-body"></tbody>
+                </table>
+            </div>
+
+            <!-- City summary -->
+            <div id="ov-city-section">
+                <h2 class="section-title">City Summary</h2>
+                <div class="city-cards" id="ov-city-cards"></div>
+            </div>
+        </div>
+
+        <!-- DAILY: Single club detail view -->
+        <div id="view-daily" class="view" style="display:none;">
+            <div style="margin-bottom:15px;">
+                <button class="back-btn" id="btn-back-daily">Back to Overview</button>
+            </div>
             <div class="income-hero">
                 <div class="label">Daily Income</div>
                 <div class="amount" id="daily-amount">-- PLN</div>
                 <div class="sub" id="daily-sub"></div>
             </div>
             <div class="stats-grid" id="daily-stats"></div>
-            <div class="courts-section">
-                <h2>Courts Breakdown</h2>
+            <div>
+                <h2 class="section-title">Courts Breakdown</h2>
                 <div class="courts-grid" id="courts-grid"></div>
             </div>
-            <div class="snapshots-section">
-                <h2>Snapshots Timeline (how income grew through the day)</h2>
+            <div>
+                <h2 class="section-title">Snapshots Timeline</h2>
                 <div class="snapshot-timeline" id="snapshot-timeline"></div>
             </div>
-            <!-- Club Pricing Card (bottom of daily view) -->
             <div class="club-card" id="club-card" style="display:none; margin-top: 20px;">
                 <div class="club-info">
                     <div class="club-name" id="cc-name">--</div>
@@ -497,8 +393,11 @@
             </div>
         </div>
 
-        <!-- Weekly View -->
+        <!-- WEEKLY: Single club weekly view -->
         <div id="view-weekly" class="view" style="display:none;">
+            <div style="margin-bottom:15px;">
+                <button class="back-btn" id="btn-back-weekly">Back to Overview</button>
+            </div>
             <div class="income-hero">
                 <div class="label">Weekly Income</div>
                 <div class="amount" id="weekly-amount">-- PLN</div>
@@ -507,8 +406,11 @@
             <div class="week-chart" id="week-chart"></div>
         </div>
 
-        <!-- Monthly View -->
+        <!-- MONTHLY: Single club monthly view -->
         <div id="view-monthly" class="view" style="display:none;">
+            <div style="margin-bottom:15px;">
+                <button class="back-btn" id="btn-back-monthly">Back to Overview</button>
+            </div>
             <div class="income-hero">
                 <div class="label">Monthly Income</div>
                 <div class="amount" id="monthly-amount">-- PLN</div>
@@ -516,55 +418,34 @@
             </div>
             <div class="month-grid" id="month-grid"></div>
         </div>
-
-        <!-- Aggregated (All Clubs) View -->
-        <div id="view-aggregated" class="view" style="display:none;">
-            <div class="income-hero">
-                <div class="label" id="agg-label">All Clubs — Total Income</div>
-                <div class="amount" id="agg-amount">-- PLN</div>
-                <div class="sub" id="agg-sub"></div>
-            </div>
-            <div class="stats-grid" id="agg-stats"></div>
-            <div class="courts-section">
-                <h2>Club Ranking</h2>
-                <table class="agg-table" id="agg-table">
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Club Name</th>
-                            <th>City</th>
-                            <th>Courts</th>
-                            <th>Booked Slots</th>
-                            <th>Income (PLN)</th>
-                        </tr>
-                    </thead>
-                    <tbody id="agg-table-body"></tbody>
-                </table>
-            </div>
-            <div class="courts-section" id="agg-city-section">
-                <h2>City Summary</h2>
-                <div class="city-cards" id="agg-city-cards"></div>
-            </div>
-        </div>
     </div>
 
     <script>
-        const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
         const DAYS_PL = ['Pon', 'Wt', 'Sr', 'Czw', 'Pt', 'Sob', 'Nd'];
 
-        let currentTab = 'daily';
+        let currentTab = 'overview';
         let currentDate = new Date().toISOString().slice(0, 10);
-        let currentClub = 'loba-padel';
+        let currentClub = null;
         let currentCity = 'ALL';
         let clubsData = {};
+        let dateCoverage = [];
 
         const datePicker = document.getElementById('date-picker');
         const clubPicker = document.getElementById('club-picker');
         const cityPicker = document.getElementById('city-picker');
         datePicker.value = currentDate;
 
+        function fmt(n) {
+            return Number(n).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        function fmtK(n) {
+            if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
+            return fmt(n);
+        }
+
+        // ── Club picker ──
         function populateClubPicker() {
-            clubPicker.innerHTML = '';
+            clubPicker.innerHTML = '<option value="">-- Select Club --</option>';
             const entries = Object.entries(clubsData)
                 .filter(([_, info]) => currentCity === 'ALL' || info.city === currentCity)
                 .sort((a, b) => a[1].name.localeCompare(b[1].name));
@@ -576,16 +457,11 @@
                 if (slug === currentClub) opt.selected = true;
                 clubPicker.appendChild(opt);
             }
-            if (!entries.find(([slug]) => slug === currentClub) && entries.length > 0) {
-                currentClub = entries[0][0];
-                clubPicker.value = currentClub;
-            }
         }
 
         async function loadClubs() {
             const resp = await fetch('/api/clubs');
             clubsData = await resp.json();
-            // Build city list
             const cities = [...new Set(Object.values(clubsData).map(c => c.city))].sort();
             cityPicker.innerHTML = '<option value="ALL">All cities (' + Object.keys(clubsData).length + ')</option>';
             for (const city of cities) {
@@ -596,374 +472,88 @@
                 cityPicker.appendChild(opt);
             }
             populateClubPicker();
-            loadClubCard();
-        }
-        loadClubs();
-
-        cityPicker.addEventListener('change', () => {
-            currentCity = cityPicker.value;
-            populateClubPicker();
-            if (currentTab === 'aggregated') {
-                document.getElementById('header-title').textContent =
-                    (currentCity === 'ALL' ? 'All Clubs' : currentCity) + ' - Income Monitor';
-            } else {
-                document.getElementById('header-title').textContent =
-                    (clubsData[currentClub]?.name || 'Padel') + ' - Income Monitor';
-                loadClubCard();
-            }
-            loadData();
-        });
-
-        clubPicker.addEventListener('change', () => {
-            currentClub = clubPicker.value;
-            document.getElementById('header-title').textContent =
-                (clubsData[currentClub]?.name || 'Padel') + ' - Income Monitor';
-            loadClubCard();
-            loadData();
-        });
-
-        // Tab switching
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                currentTab = btn.dataset.tab;
-                document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
-                document.getElementById('view-' + currentTab).style.display = 'block';
-
-                // Hide/show club-picker and club-card based on aggregated tab
-                if (currentTab === 'aggregated') {
-                    clubPicker.style.display = 'none';
-                    document.getElementById('club-card').style.display = 'none';
-                    document.getElementById('btn-scrape').style.display = 'none';
-                    document.getElementById('header-title').textContent = 'All Clubs - Income Monitor';
-                } else {
-                    clubPicker.style.display = '';
-                    document.getElementById('btn-scrape').style.display = '';
-                    loadClubCard();
-                    document.getElementById('header-title').textContent =
-                        (clubsData[currentClub]?.name || 'Padel') + ' - Income Monitor';
-                }
-
-                if (currentTab === 'monthly' || (currentTab === 'aggregated' && datePicker.type === 'month')) {
-                    datePicker.type = 'month';
-                    datePicker.value = currentDate.slice(0, 7);
-                } else if (currentTab === 'aggregated') {
-                    datePicker.type = 'date';
-                    datePicker.value = currentDate;
-                } else {
-                    datePicker.type = 'date';
-                    datePicker.value = currentDate;
-                }
-                loadData();
-            });
-        });
-
-        datePicker.addEventListener('change', () => {
-            if (currentTab === 'monthly') {
-                currentDate = datePicker.value + '-01';
-            } else {
-                currentDate = datePicker.value;
-            }
-            loadData();
-        });
-
-        // Scrape now button
-        document.getElementById('btn-scrape').addEventListener('click', async () => {
-            const btn = document.getElementById('btn-scrape');
-            btn.disabled = true;
-            btn.textContent = 'Scraping...';
-            try {
-                const resp = await fetch('/api/scrape-now?date=' + currentDate + '&club=' + currentClub);
-                const data = await resp.json();
-                if (data.status === 'ok') {
-                    btn.textContent = 'Done!';
-                    loadData();
-                } else {
-                    btn.textContent = 'Failed';
-                }
-            } catch (e) {
-                btn.textContent = 'Error';
-            }
-            setTimeout(() => {
-                btn.disabled = false;
-                btn.textContent = 'Scrape Now';
-            }, 2000);
-        });
-
-        function fmt(n) {
-            return Number(n).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         }
 
-        async function loadClubCard() {
-            const card = document.getElementById('club-card');
-            const club = clubsData[currentClub];
-            if (!club) { card.style.display = 'none'; return; }
-
-            document.getElementById('cc-name').textContent = club.name;
-            document.getElementById('cc-meta').textContent = club.city + ' | ' + club.courts + ' courts';
-            card.style.display = 'flex';
-
-            try {
-                const resp = await fetch('/api/club-pricing?club=' + currentClub);
-                const data = await resp.json();
-                const badge = document.getElementById('cc-badge');
-                const isPerClub = data.pricing_type === 'per_club';
-
-                badge.textContent = isPerClub ? 'Per-club pricing' : 'Using generic pricing';
-                badge.className = 'pricing-badge ' + (isPerClub ? 'per-club' : 'generic');
-
-                const rules = data.rules || [];
-                if (rules.length === 0) {
-                    document.getElementById('cc-pricing').innerHTML = '<div class="no-data">No pricing data</div>';
-                    return;
-                }
-
-                // Group rules by day_type
-                const dayLabels = { weekday: 'Mon-Fri', weekend: 'Sat-Sun', holiday: 'Holidays', all: 'All days' };
-                let tableHtml = '<table><tr><th>Day</th><th>Time</th><th>Price/h</th></tr>';
-                for (const rule of rules) {
-                    const dayLabel = dayLabels[rule.day_type] || rule.day_type;
-                    const startH = String(rule.start_hour).padStart(2, '0');
-                    const startM = String(rule.start_min).padStart(2, '0');
-                    const endH = String(rule.end_hour).padStart(2, '0');
-                    const endM = String(rule.end_min).padStart(2, '0');
-                    const timeRange = (rule.end_hour === 23 && rule.end_min === 59)
-                        ? `od ${startH}:${startM}`
-                        : `${startH}:${startM} - ${endH}:${endM}`;
-                    tableHtml += `<tr>
-                        <td>${dayLabel}</td>
-                        <td>${timeRange}</td>
-                        <td class="price">${fmt(rule.price_per_hour)} PLN</td>
-                    </tr>`;
-                }
-                tableHtml += '</table>';
-                if (data.scraped_at) {
-                    tableHtml += `<div style="font-size:11px;color:#666;margin-top:6px;">Scraped: ${data.scraped_at}</div>`;
-                }
-                document.getElementById('cc-pricing').innerHTML = tableHtml;
-            } catch (e) {
-                document.getElementById('cc-pricing').innerHTML = '<div class="no-data">Failed to load pricing</div>';
-            }
+        async function loadDateCoverage() {
+            const resp = await fetch('/api/date-coverage');
+            dateCoverage = await resp.json();
+            renderTimeline();
+            updateStatusText();
         }
 
-        async function autoScrapeDate(dateStr) {
-            const btn = document.getElementById('btn-scrape');
-            btn.disabled = true;
-            btn.textContent = 'Scraping...';
-            try {
-                const resp = await fetch('/api/scrape-now?date=' + dateStr + '&club=' + currentClub);
-                const data = await resp.json();
-                if (data.status === 'ok') {
-                    btn.textContent = 'Done!';
-                    await loadData();
-                } else {
-                    btn.textContent = 'Failed';
-                }
-            } catch (e) {
-                btn.textContent = 'Error';
-            }
-            setTimeout(() => {
-                btn.disabled = false;
-                btn.textContent = 'Scrape Now';
-            }, 2000);
-        }
-
-        async function loadDaily() {
-            const resp = await fetch('/api/daily?date=' + currentDate + '&club=' + currentClub);
-            const data = await resp.json();
-
-            // If no data for this date, show prompt and auto-fetch
-            if (data.message === 'No data yet') {
-                document.getElementById('daily-amount').textContent = '-- PLN';
-                document.getElementById('daily-sub').textContent = currentDate + ' | No data yet - fetching...';
-                document.getElementById('last-update').textContent = 'never';
-                document.getElementById('daily-stats').innerHTML = '';
-                document.getElementById('courts-grid').innerHTML = `
-                    <div class="no-data" style="grid-column: 1/-1;">
-                        Fetching booking data for ${currentDate}...
-                    </div>`;
-                document.getElementById('snapshot-timeline').innerHTML = '';
-                // Auto-scrape this date
-                await autoScrapeDate(currentDate);
+        function updateStatusText() {
+            if (dateCoverage.length === 0) {
+                document.getElementById('status-text').textContent = 'No data yet';
                 return;
             }
-
-            document.getElementById('daily-amount').textContent = fmt(data.total_income || 0) + ' PLN';
-            document.getElementById('daily-sub').textContent = currentDate + ' | ' + (data.total_booked_slots || 0) + ' booked slots';
-            document.getElementById('last-update').textContent = data.snapshot_at || 'never';
-
-            // Stats
-            const booked = data.total_booked_slots || 0;
-            const numCourts = clubsData[currentClub]?.courts || 8;
-            const totalSlots = numCourts * 33; // courts * 33 half-hour slots (6:00-22:30)
-            const occupancy = totalSlots > 0 ? ((booked / totalSlots) * 100).toFixed(1) : 0;
-            const avgPerCourt = numCourts > 0 ? ((data.total_income || 0) / numCourts).toFixed(2) : 0;
-
-            document.getElementById('daily-stats').innerHTML = `
-                <div class="stat-card">
-                    <div class="stat-value">${booked}</div>
-                    <div class="stat-label">Booked Slots</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">${occupancy}%</div>
-                    <div class="stat-label">Occupancy Rate</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">${fmt(avgPerCourt)}</div>
-                    <div class="stat-label">Avg per Court (PLN)</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">${numCourts}</div>
-                    <div class="stat-label">Courts</div>
-                </div>
-            `;
-
-            // Courts breakdown
-            const courtsData = data.courts_data || {};
-            const courtsHtml = Object.entries(courtsData).sort().map(([name, info]) => `
-                <div class="court-card">
-                    <div class="court-name">${name}</div>
-                    <div class="court-income">${fmt(info.income)} PLN</div>
-                    <div class="court-slots">${info.booked} booked / ${info.booked + info.available} total</div>
-                </div>
-            `).join('');
-            document.getElementById('courts-grid').innerHTML = courtsHtml || '<div class="no-data">No court data yet</div>';
-
-            // Snapshots
-            const histResp = await fetch('/api/daily-history?date=' + currentDate + '&club=' + currentClub);
-            const snapshots = await histResp.json();
-            const snapHtml = snapshots.map(s => `
-                <div class="snapshot-card">
-                    <div class="snap-time">${s.snapshot_at.slice(11, 16)}</div>
-                    <div class="snap-income">${fmt(s.total_income)} PLN</div>
-                    <div class="snap-slots">${s.total_booked_slots} slots</div>
-                </div>
-            `).join('');
-            document.getElementById('snapshot-timeline').innerHTML = snapHtml || '<div class="no-data">No snapshots yet</div>';
+            const last = dateCoverage[dateCoverage.length - 1];
+            const first = dateCoverage[0];
+            document.getElementById('status-text').textContent =
+                dateCoverage.length + ' days tracked | ' +
+                first.target_date + ' to ' + last.target_date +
+                ' | Last snapshot: ' + (last.last_snapshot || '--').slice(0, 16);
         }
 
-        async function loadWeekly() {
-            const d = new Date(currentDate);
-            const day = d.getDay();
-            const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-            const monday = new Date(d.setDate(diff));
-            const weekStart = monday.toISOString().slice(0, 10);
-
-            const resp = await fetch('/api/weekly?week_start=' + weekStart + '&club=' + currentClub);
-            const data = await resp.json();
-
-            document.getElementById('weekly-amount').textContent = fmt(data.total_income || 0) + ' PLN';
-            document.getElementById('weekly-sub').textContent = data.week_start + ' to ' + data.week_end;
-
-            // Bar chart
-            const days = data.days || [];
-            const maxIncome = Math.max(...days.map(d => d.total_income), 1);
-
-            let barsHtml = '';
-            for (let i = 0; i < 7; i++) {
-                const dayDate = new Date(monday);
-                dayDate.setDate(monday.getDate() + i);
-                const dateStr = dayDate.toISOString().slice(0, 10);
-                const dayData = days.find(d => d.target_date === dateStr);
-                const income = dayData ? dayData.total_income : 0;
-                const heightPct = maxIncome > 0 ? (income / maxIncome) * 100 : 0;
-
-                barsHtml += `
-                    <div class="bar-wrapper">
-                        <div class="bar-value">${income > 0 ? fmt(income) : ''}</div>
-                        <div class="bar" style="height: ${Math.max(heightPct, 1)}%"></div>
-                        <div class="bar-label">${DAYS_PL[i]}<br>${dateStr.slice(8, 10)}</div>
-                    </div>
-                `;
+        // ── Timeline chart ──
+        function renderTimeline() {
+            const container = document.getElementById('timeline-chart');
+            if (dateCoverage.length === 0) {
+                container.innerHTML = '<div class="no-data" style="width:100%">No data yet</div>';
+                return;
             }
-            document.getElementById('week-chart').innerHTML = barsHtml;
+            const todayStr = new Date().toISOString().slice(0, 10);
+            const maxIncome = Math.max(...dateCoverage.map(d => d.total_income), 1);
+            let html = '';
+            for (const day of dateCoverage) {
+                const heightPct = (day.total_income / maxIncome) * 100;
+                const isToday = day.target_date === todayStr;
+                const isFuture = day.target_date > todayStr;
+                const barClass = isToday ? 'today' : isFuture ? 'future' : 'past';
+                const selected = day.target_date === currentDate ? ' selected' : '';
+                const dateLabel = day.target_date.slice(5); // MM-DD
+                html += `
+                    <div class="timeline-bar-wrapper${selected}" data-date="${day.target_date}" onclick="selectTimelineDate('${day.target_date}')">
+                        <div class="timeline-value">${fmtK(day.total_income)}</div>
+                        <div class="timeline-bar ${barClass}" style="height: ${Math.max(heightPct, 2)}%"
+                             title="${day.target_date}: ${fmt(day.total_income)} PLN | ${day.club_count} clubs | ${day.total_booked} slots"></div>
+                        <div class="timeline-label">${dateLabel}</div>
+                    </div>`;
+            }
+            container.innerHTML = html;
+            // Scroll to today or selected date
+            const sel = container.querySelector('.selected') || container.querySelector(`[data-date="${todayStr}"]`);
+            if (sel) sel.scrollIntoView({ inline: 'center', behavior: 'smooth' });
         }
 
-        async function loadMonthly() {
-            const monthStr = currentDate.slice(0, 7);
-            const resp = await fetch('/api/monthly?month=' + monthStr + '&club=' + currentClub);
+        function selectTimelineDate(dateStr) {
+            currentDate = dateStr;
+            datePicker.value = dateStr;
+            renderTimeline();
+            loadOverviewData();
+        }
+
+        // ── Overview (market-wide) ──
+        async function loadOverviewData() {
+            const cityParam = currentCity === 'ALL' ? 'ALL' : currentCity;
+            const resp = await fetch(`/api/aggregated-daily?date=${currentDate}&city=${cityParam}`);
             const data = await resp.json();
-
-            document.getElementById('monthly-amount').textContent = fmt(data.total_income || 0) + ' PLN';
-            document.getElementById('monthly-sub').textContent = monthStr;
-
-            // Calendar grid
-            const [year, month] = monthStr.split('-').map(Number);
-            const firstDay = new Date(year, month - 1, 1);
-            const lastDay = new Date(year, month, 0);
-            const startWeekday = (firstDay.getDay() + 6) % 7; // Mon=0
-
-            const days = data.days || [];
-            const dayMap = {};
-            days.forEach(d => { dayMap[d.target_date] = d.total_income; });
 
             const todayStr = new Date().toISOString().slice(0, 10);
+            const dateType = currentDate === todayStr ? 'Today' : currentDate > todayStr ? 'Future' : 'Past';
+            const cityLabel = cityParam === 'ALL' ? 'Entire Market' : cityParam;
 
-            let html = DAYS_PL.map(d => `<div class="day-header">${d}</div>`).join('');
-
-            // Empty cells before first day
-            for (let i = 0; i < startWeekday; i++) {
-                html += '<div class="day-cell empty"></div>';
-            }
-
-            for (let d = 1; d <= lastDay.getDate(); d++) {
-                const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-                const income = dayMap[dateStr] || 0;
-                const hasData = dateStr in dayMap;
-                const isToday = dateStr === todayStr;
-                const classes = ['day-cell', hasData ? 'has-data' : '', isToday ? 'today' : ''].filter(Boolean).join(' ');
-
-                html += `
-                    <div class="${classes}">
-                        <div class="day-num">${d}</div>
-                        ${hasData ? `<div class="day-income">${fmt(income)}</div>` : ''}
-                    </div>
-                `;
-            }
-
-            document.getElementById('month-grid').innerHTML = html;
-        }
-
-        async function loadAggregated() {
-            const cityParam = currentCity === 'ALL' ? 'ALL' : currentCity;
-            let data;
-
-            if (datePicker.type === 'month') {
-                // Monthly range
-                const monthStr = currentDate.slice(0, 7);
-                const [year, month] = monthStr.split('-').map(Number);
-                const start = `${year}-${String(month).padStart(2, '0')}-01`;
-                let endDt;
-                if (month === 12) endDt = new Date(year + 1, 0, 0);
-                else endDt = new Date(year, month, 0);
-                const end = endDt.toISOString().slice(0, 10);
-
-                const resp = await fetch(`/api/aggregated-range?start=${start}&end=${end}&city=${cityParam}`);
-                data = await resp.json();
-                data.booked_available = false;
-                document.getElementById('agg-label').textContent =
-                    (cityParam === 'ALL' ? 'All Clubs' : cityParam) + ' — Monthly Income';
-                document.getElementById('agg-sub').textContent = monthStr;
-            } else {
-                // Daily
-                const resp = await fetch(`/api/aggregated-daily?date=${currentDate}&city=${cityParam}`);
-                data = await resp.json();
-                data.booked_available = true;
-                document.getElementById('agg-label').textContent =
-                    (cityParam === 'ALL' ? 'All Clubs' : cityParam) + ' — Daily Income';
-                document.getElementById('agg-sub').textContent = currentDate;
-            }
+            document.getElementById('ov-label').textContent = cityLabel + ' \u2014 ' + dateType;
+            document.getElementById('ov-amount').textContent = fmt(data.total_income || 0) + ' PLN';
+            document.getElementById('ov-sub').textContent = currentDate + ' | ' + (data.clubs || []).length + ' clubs reporting';
 
             const clubs = data.clubs || [];
-            const totalIncome = data.total_income || 0;
-
-            document.getElementById('agg-amount').textContent = fmt(totalIncome) + ' PLN';
-
-            // Stats
             const totalCourts = clubs.reduce((s, c) => s + (c.courts || 0), 0);
-            const avgPerClub = clubs.length > 0 ? (totalIncome / clubs.length) : 0;
-            let statsHtml = `
+            const totalBooked = data.total_booked || 0;
+            const avgPerClub = clubs.length > 0 ? (data.total_income / clubs.length) : 0;
+            const playtomicClubs = clubs.filter(c => c.booking_system === 'playtomic' || c.booking_system === 'both').length;
+            const klubyClubs = clubs.filter(c => c.booking_system === 'kluby_org' || c.booking_system === 'both').length;
+
+            document.getElementById('ov-stats').innerHTML = `
                 <div class="stat-card">
                     <div class="stat-value">${clubs.length}</div>
                     <div class="stat-label">Clubs with Data</div>
@@ -973,88 +563,56 @@
                     <div class="stat-label">Total Courts</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-value">${fmt(avgPerClub)}</div>
-                    <div class="stat-label">Avg Income / Club (PLN)</div>
-                </div>`;
-            if (data.booked_available) {
-                const totalBooked = data.total_booked || 0;
-                statsHtml += `
-                <div class="stat-card">
                     <div class="stat-value">${totalBooked}</div>
                     <div class="stat-label">Total Booked Slots</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${fmt(avgPerClub)}</div>
+                    <div class="stat-label">Avg Income / Club</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${klubyClubs}</div>
+                    <div class="stat-label">Kluby.org Clubs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${playtomicClubs}</div>
+                    <div class="stat-label">Playtomic Clubs</div>
                 </div>`;
-            }
-            document.getElementById('agg-stats').innerHTML = statsHtml;
 
-            // Club ranking table sorted by income desc
+            // Club ranking table
+            document.getElementById('ov-table-title').textContent = 'Club Ranking \u2014 ' + currentDate;
             clubs.sort((a, b) => b.income - a.income);
-
-            // Determine booked column visibility
-            const bookedCol = data.booked_available;
-            // Update table header
-            document.querySelector('#agg-table thead tr').innerHTML = `
-                <th>#</th>
-                <th>Club Name</th>
-                <th>City</th>
-                <th>Src</th>
-                <th>Courts</th>
-                ${bookedCol ? '<th>Booked Slots</th>' : ''}
-                <th>Income (PLN)</th>`;
-
             let rowsHtml = '';
             clubs.forEach((club, i) => {
                 const sysLabel = club.booking_system === 'playtomic' ? 'P' : club.booking_system === 'both' ? 'K+P' : 'K';
                 const sysColor = club.booking_system === 'playtomic' ? '#3498db' : club.booking_system === 'both' ? '#e67e22' : '#2ecc71';
                 rowsHtml += `
-                    <tr data-slug="${club.slug}">
+                    <tr data-slug="${club.slug}" onclick="drillIntoClub('${club.slug}')">
                         <td class="rank">${i + 1}</td>
                         <td>${club.name}</td>
                         <td>${club.city}</td>
-                        <td><span style="color:${sysColor};font-size:0.75em;font-weight:600;">${sysLabel}</span></td>
+                        <td><span class="sys-badge" style="color:${sysColor};">${sysLabel}</span></td>
                         <td>${club.courts}</td>
-                        ${bookedCol ? `<td>${club.booked || 0}</td>` : ''}
+                        <td>${club.booked || 0}</td>
                         <td class="income">${fmt(club.income)}</td>
                     </tr>`;
             });
             if (clubs.length === 0) {
-                const colSpan = bookedCol ? 7 : 6;
-                rowsHtml = `<tr><td colspan="${colSpan}" style="text-align:center;color:#666;font-style:italic;">No data for this date</td></tr>`;
+                rowsHtml = '<tr><td colspan="7" class="no-data">No data for this date</td></tr>';
             }
-            document.getElementById('agg-table-body').innerHTML = rowsHtml;
+            document.getElementById('ov-table-body').innerHTML = rowsHtml;
 
-            // Click row → switch to that club's daily view
-            document.querySelectorAll('#agg-table-body tr[data-slug]').forEach(row => {
-                row.addEventListener('click', () => {
-                    const slug = row.dataset.slug;
-                    currentClub = slug;
-                    clubPicker.value = slug;
-                    // Switch to daily tab
-                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                    document.querySelector('.tab-btn[data-tab="daily"]').classList.add('active');
-                    currentTab = 'daily';
-                    document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
-                    document.getElementById('view-daily').style.display = 'block';
-                    clubPicker.style.display = '';
-                    document.getElementById('btn-scrape').style.display = '';
-                    datePicker.type = 'date';
-                    datePicker.value = currentDate;
-                    document.getElementById('header-title').textContent =
-                        (clubsData[slug]?.name || 'Padel') + ' - Income Monitor';
-                    loadClubCard();
-                    loadData();
-                });
-            });
-
-            // City summary cards (only when showing ALL cities)
-            const citySection = document.getElementById('agg-city-section');
+            // City summary
+            const citySection = document.getElementById('ov-city-section');
             if (cityParam === 'ALL' && clubs.length > 0) {
                 citySection.style.display = '';
                 const cityMap = {};
                 clubs.forEach(c => {
-                    if (!cityMap[c.city]) cityMap[c.city] = { income: 0, clubs: 0, courts: 0 };
+                    if (!cityMap[c.city]) cityMap[c.city] = { income: 0, clubs: 0, courts: 0, booked: 0 };
                     cityMap[c.city].income += c.income;
                     cityMap[c.city].clubs += 1;
                     cityMap[c.city].courts += c.courts || 0;
+                    cityMap[c.city].booked += c.booked || 0;
                 });
                 const citySorted = Object.entries(cityMap).sort((a, b) => b[1].income - a[1].income);
                 let cityHtml = '';
@@ -1063,52 +621,275 @@
                         <div class="city-card">
                             <div class="city-name">${city}</div>
                             <div class="city-income">${fmt(info.income)} PLN</div>
-                            <div class="city-meta">${info.clubs} clubs | ${info.courts} courts</div>
+                            <div class="city-meta">${info.clubs} clubs | ${info.courts} courts | ${info.booked} booked</div>
                         </div>`;
                 }
-                document.getElementById('agg-city-cards').innerHTML = cityHtml;
+                document.getElementById('ov-city-cards').innerHTML = cityHtml;
             } else {
                 citySection.style.display = 'none';
             }
         }
 
+        // ── Drill into single club ──
+        function drillIntoClub(slug) {
+            currentClub = slug;
+            clubPicker.value = slug;
+            switchTab('daily');
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+            if (btn) btn.classList.add('active');
+            document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
+            document.getElementById('view-' + tab).style.display = 'block';
+
+            if (tab === 'overview') {
+                clubPicker.style.display = 'none';
+                document.getElementById('header-title').textContent = 'Padel Market Monitor';
+                datePicker.type = 'date';
+                datePicker.value = currentDate;
+            } else {
+                clubPicker.style.display = '';
+                if (!currentClub && Object.keys(clubsData).length > 0) {
+                    currentClub = Object.keys(clubsData)[0];
+                    clubPicker.value = currentClub;
+                }
+                document.getElementById('header-title').textContent =
+                    (clubsData[currentClub]?.name || 'Club') + ' \u2014 Income Monitor';
+                if (tab === 'monthly') {
+                    datePicker.type = 'month';
+                    datePicker.value = currentDate.slice(0, 7);
+                } else {
+                    datePicker.type = 'date';
+                    datePicker.value = currentDate;
+                }
+            }
+            loadData();
+        }
+
+        // ── Daily (single club) ──
+        async function loadDaily() {
+            if (!currentClub) return;
+            const resp = await fetch('/api/daily?date=' + currentDate + '&club=' + currentClub);
+            const data = await resp.json();
+
+            if (data.message === 'No data yet') {
+                document.getElementById('daily-amount').textContent = '-- PLN';
+                document.getElementById('daily-sub').textContent = currentDate + ' | ' + (clubsData[currentClub]?.name || '') + ' | No data';
+                document.getElementById('daily-stats').innerHTML = '';
+                document.getElementById('courts-grid').innerHTML = '<div class="no-data">No data for this date</div>';
+                document.getElementById('snapshot-timeline').innerHTML = '';
+                loadClubCard();
+                return;
+            }
+
+            document.getElementById('daily-amount').textContent = fmt(data.total_income || 0) + ' PLN';
+            document.getElementById('daily-sub').textContent = currentDate + ' | ' + (clubsData[currentClub]?.name || '') + ' | ' + (data.total_booked_slots || 0) + ' booked slots';
+            document.getElementById('header-title').textContent = (clubsData[currentClub]?.name || 'Club') + ' \u2014 Income Monitor';
+
+            const booked = data.total_booked_slots || 0;
+            const numCourts = clubsData[currentClub]?.courts || 8;
+            const totalSlots = numCourts * 33;
+            const occupancy = totalSlots > 0 ? ((booked / totalSlots) * 100).toFixed(1) : 0;
+            const avgPerCourt = numCourts > 0 ? ((data.total_income || 0) / numCourts).toFixed(2) : 0;
+
+            document.getElementById('daily-stats').innerHTML = `
+                <div class="stat-card"><div class="stat-value">${booked}</div><div class="stat-label">Booked Slots</div></div>
+                <div class="stat-card"><div class="stat-value">${occupancy}%</div><div class="stat-label">Occupancy Rate</div></div>
+                <div class="stat-card"><div class="stat-value">${fmt(avgPerCourt)}</div><div class="stat-label">Avg per Court (PLN)</div></div>
+                <div class="stat-card"><div class="stat-value">${numCourts}</div><div class="stat-label">Courts</div></div>`;
+
+            const courtsData = data.courts_data || {};
+            const courtsHtml = Object.entries(courtsData).sort().map(([name, info]) => `
+                <div class="court-card">
+                    <div class="court-name">${name}</div>
+                    <div class="court-income">${fmt(info.income)} PLN</div>
+                    <div class="court-slots">${info.booked} booked / ${info.booked + info.available} total</div>
+                </div>`).join('');
+            document.getElementById('courts-grid').innerHTML = courtsHtml || '<div class="no-data">No court data</div>';
+
+            const histResp = await fetch('/api/daily-history?date=' + currentDate + '&club=' + currentClub);
+            const snapshots = await histResp.json();
+            const snapHtml = snapshots.map(s => `
+                <div class="snapshot-card">
+                    <div class="snap-time">${s.snapshot_at.slice(11, 16)}</div>
+                    <div class="snap-income">${fmt(s.total_income)} PLN</div>
+                    <div class="snap-slots">${s.total_booked_slots} slots</div>
+                </div>`).join('');
+            document.getElementById('snapshot-timeline').innerHTML = snapHtml || '<div class="no-data">No snapshots</div>';
+
+            loadClubCard();
+        }
+
+        async function loadClubCard() {
+            const card = document.getElementById('club-card');
+            const club = clubsData[currentClub];
+            if (!club) { card.style.display = 'none'; return; }
+
+            document.getElementById('cc-name').textContent = club.name;
+            document.getElementById('cc-meta').textContent = club.city + ' | ' + club.courts + ' courts | ' + club.booking_system;
+            card.style.display = 'flex';
+
+            try {
+                const resp = await fetch('/api/club-pricing?club=' + currentClub);
+                const data = await resp.json();
+                const badge = document.getElementById('cc-badge');
+                const isPerClub = data.pricing_type === 'per_club';
+                badge.textContent = isPerClub ? 'Per-club pricing' : 'Generic pricing';
+                badge.className = 'pricing-badge ' + (isPerClub ? 'per-club' : 'generic');
+
+                const rules = data.rules || [];
+                if (rules.length === 0) {
+                    document.getElementById('cc-pricing').innerHTML = '<div class="no-data">No pricing data</div>';
+                    return;
+                }
+                const dayLabels = { weekday: 'Mon-Fri', weekend: 'Sat-Sun', holiday: 'Holidays', all: 'All days' };
+                let tableHtml = '<table><tr><th>Day</th><th>Time</th><th>Price/h</th></tr>';
+                for (const rule of rules) {
+                    const dayLabel = dayLabels[rule.day_type] || rule.day_type;
+                    const startH = String(rule.start_hour).padStart(2, '0');
+                    const startM = String(rule.start_min).padStart(2, '0');
+                    const endH = String(rule.end_hour).padStart(2, '0');
+                    const endM = String(rule.end_min).padStart(2, '0');
+                    const timeRange = (rule.end_hour === 23 && rule.end_min === 59)
+                        ? `od ${startH}:${startM}` : `${startH}:${startM} - ${endH}:${endM}`;
+                    tableHtml += `<tr><td>${dayLabel}</td><td>${timeRange}</td><td class="price">${fmt(rule.price_per_hour)} PLN</td></tr>`;
+                }
+                tableHtml += '</table>';
+                if (data.scraped_at) tableHtml += `<div style="font-size:11px;color:#666;margin-top:6px;">Scraped: ${data.scraped_at}</div>`;
+                document.getElementById('cc-pricing').innerHTML = tableHtml;
+            } catch (e) {
+                document.getElementById('cc-pricing').innerHTML = '<div class="no-data">Failed to load pricing</div>';
+            }
+        }
+
+        // ── Weekly ──
+        async function loadWeekly() {
+            if (!currentClub) return;
+            const d = new Date(currentDate);
+            const day = d.getDay();
+            const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+            const monday = new Date(d.setDate(diff));
+            const weekStart = monday.toISOString().slice(0, 10);
+            const resp = await fetch('/api/weekly?week_start=' + weekStart + '&club=' + currentClub);
+            const data = await resp.json();
+
+            document.getElementById('weekly-amount').textContent = fmt(data.total_income || 0) + ' PLN';
+            document.getElementById('weekly-sub').textContent = (clubsData[currentClub]?.name || '') + ' | ' + data.week_start + ' to ' + data.week_end;
+
+            const days = data.days || [];
+            const maxIncome = Math.max(...days.map(d => d.total_income), 1);
+            let barsHtml = '';
+            for (let i = 0; i < 7; i++) {
+                const dayDate = new Date(monday);
+                dayDate.setDate(monday.getDate() + i);
+                const dateStr = dayDate.toISOString().slice(0, 10);
+                const dayData = days.find(d => d.target_date === dateStr);
+                const income = dayData ? dayData.total_income : 0;
+                const heightPct = maxIncome > 0 ? (income / maxIncome) * 100 : 0;
+                barsHtml += `
+                    <div class="bar-wrapper">
+                        <div class="bar-value">${income > 0 ? fmt(income) : ''}</div>
+                        <div class="bar" style="height: ${Math.max(heightPct, 1)}%"></div>
+                        <div class="bar-label">${DAYS_PL[i]}<br>${dateStr.slice(8, 10)}</div>
+                    </div>`;
+            }
+            document.getElementById('week-chart').innerHTML = barsHtml;
+        }
+
+        // ── Monthly ──
+        async function loadMonthly() {
+            if (!currentClub) return;
+            const monthStr = currentDate.slice(0, 7);
+            const resp = await fetch('/api/monthly?month=' + monthStr + '&club=' + currentClub);
+            const data = await resp.json();
+
+            document.getElementById('monthly-amount').textContent = fmt(data.total_income || 0) + ' PLN';
+            document.getElementById('monthly-sub').textContent = (clubsData[currentClub]?.name || '') + ' | ' + monthStr;
+
+            const [year, month] = monthStr.split('-').map(Number);
+            const firstDay = new Date(year, month - 1, 1);
+            const lastDay = new Date(year, month, 0);
+            const startWeekday = (firstDay.getDay() + 6) % 7;
+
+            const days = data.days || [];
+            const dayMap = {};
+            days.forEach(d => { dayMap[d.target_date] = d.total_income; });
+            const todayStr = new Date().toISOString().slice(0, 10);
+
+            let html = DAYS_PL.map(d => `<div class="day-header">${d}</div>`).join('');
+            for (let i = 0; i < startWeekday; i++) html += '<div class="day-cell empty"></div>';
+            for (let d = 1; d <= lastDay.getDate(); d++) {
+                const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                const income = dayMap[dateStr] || 0;
+                const hasData = dateStr in dayMap;
+                const isToday = dateStr === todayStr;
+                const classes = ['day-cell', hasData ? 'has-data' : '', isToday ? 'today' : ''].filter(Boolean).join(' ');
+                html += `<div class="${classes}"><div class="day-num">${d}</div>${hasData ? `<div class="day-income">${fmt(income)}</div>` : ''}</div>`;
+            }
+            document.getElementById('month-grid').innerHTML = html;
+        }
+
+        // ── Main load dispatcher ──
         async function loadData() {
             try {
-                if (currentTab === 'daily') await loadDaily();
+                if (currentTab === 'overview') await loadOverviewData();
+                else if (currentTab === 'daily') await loadDaily();
                 else if (currentTab === 'weekly') await loadWeekly();
                 else if (currentTab === 'monthly') await loadMonthly();
-                else if (currentTab === 'aggregated') await loadAggregated();
-            } catch (e) {
-                console.error('Load error:', e);
-            }
+            } catch (e) { console.error('Load error:', e); }
         }
 
-        // Calculate next scrape time
-        function updateNextScrape() {
-            const now = new Date();
-            const times = [
-                [10, 0], [18, 0], [23, 40]
-            ];
-            let next = null;
-            for (const [h, m] of times) {
-                const t = new Date(now);
-                t.setHours(h, m, 0, 0);
-                if (t > now) { next = t; break; }
-            }
-            if (!next) {
-                next = new Date(now);
-                next.setDate(next.getDate() + 1);
-                next.setHours(10, 0, 0, 0);
-            }
-            document.getElementById('next-scrape').textContent =
-                next.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
-        }
+        // ── Event listeners ──
+        cityPicker.addEventListener('change', () => {
+            currentCity = cityPicker.value;
+            populateClubPicker();
+            loadData();
+        });
 
-        updateNextScrape();
-        setInterval(updateNextScrape, 60000);
-        loadData();
+        clubPicker.addEventListener('change', () => {
+            currentClub = clubPicker.value;
+            if (currentClub && currentTab !== 'overview') {
+                document.getElementById('header-title').textContent =
+                    (clubsData[currentClub]?.name || 'Club') + ' \u2014 Income Monitor';
+            }
+            loadData();
+        });
+
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+        });
+
+        datePicker.addEventListener('change', () => {
+            if (currentTab === 'monthly') {
+                currentDate = datePicker.value + '-01';
+            } else {
+                currentDate = datePicker.value;
+            }
+            if (currentTab === 'overview') renderTimeline();
+            loadData();
+        });
+
+        // Back buttons
+        document.getElementById('btn-back-daily').addEventListener('click', () => switchTab('overview'));
+        document.getElementById('btn-back-weekly').addEventListener('click', () => switchTab('overview'));
+        document.getElementById('btn-back-monthly').addEventListener('click', () => switchTab('overview'));
+
+        // ── Init ──
+        async function init() {
+            await loadClubs();
+            await loadDateCoverage();
+            await loadData();
+        }
+        init();
+
         // Auto-refresh every 5 minutes
-        setInterval(loadData, 300000);
+        setInterval(() => {
+            loadDateCoverage();
+            loadData();
+        }, 300000);
     </script>
 </body>
 </html>

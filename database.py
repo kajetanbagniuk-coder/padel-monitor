@@ -234,6 +234,35 @@ def get_aggregated_range(start_date, end_date, city=None):
     return {"clubs": clubs, "total_income": total_income}
 
 
+def get_date_coverage():
+    """Get all dates that have snapshot data, with totals."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+        SELECT target_date,
+               COUNT(DISTINCT club_slug) as club_count,
+               SUM(total_income) as total_income,
+               SUM(total_booked_slots) as total_booked,
+               MAX(snapshot_at) as last_snapshot
+        FROM (
+            SELECT DISTINCT ON (club_slug, target_date)
+                   club_slug, target_date, total_income, total_booked_slots, snapshot_at
+            FROM daily_snapshot
+            ORDER BY club_slug, target_date, snapshot_at DESC
+        ) sub
+        GROUP BY target_date
+        ORDER BY target_date
+    """)
+    rows = _dictrows(c)
+    conn.close()
+    for r in rows:
+        r["target_date"] = str(r["target_date"])
+        r["last_snapshot"] = str(r["last_snapshot"]) if r["last_snapshot"] else None
+        r["total_income"] = float(r["total_income"] or 0)
+        r["total_booked"] = int(r["total_booked"] or 0)
+    return rows
+
+
 def save_playtomic_prices(club_slug, prices):
     conn = get_connection()
     c = conn.cursor()

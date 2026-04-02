@@ -1,8 +1,9 @@
 """
-Loba Padel Income Monitor - Main Application
+Padel Market Monitor - Main Application
 
 A web dashboard that tracks court bookings and calculates income
-for padel clubs based on data scraped from kluby.org and Playtomic.
+for padel clubs across the entire Polish market, based on data
+scraped from kluby.org and Playtomic.
 """
 
 import logging
@@ -15,7 +16,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from database import (init_db, get_latest_snapshot_for_date, get_income_range,
                       get_all_snapshots_for_date, get_club_pricing, get_all_club_pricing,
-                      get_aggregated_daily, get_aggregated_range)
+                      get_aggregated_daily, get_aggregated_range, get_date_coverage)
 from scraper import scrape_date
 from playtomic_scraper import scrape_playtomic_hourly, build_all_price_maps
 from pricing_scraper import scrape_club_pricing, scrape_all_pricing
@@ -360,6 +361,12 @@ def _playtomic_price_map_to_rules(price_map_rows):
             })
             i = j
     return rules
+
+
+@app.route("/api/date-coverage")
+def api_date_coverage():
+    """Get all dates with data, including totals."""
+    return jsonify(get_date_coverage())
 
 
 @app.route("/api/club-pricing")
