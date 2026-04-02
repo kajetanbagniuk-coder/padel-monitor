@@ -143,8 +143,8 @@ def scheduled_playtomic_price_maps():
 scheduler.add_job(scheduled_scrape_kluby, "cron", hour=10, minute=0, id="kluby_10am")
 scheduler.add_job(scheduled_scrape_kluby, "cron", hour=18, minute=0, id="kluby_6pm")
 scheduler.add_job(scheduled_scrape_kluby, "cron", hour=23, minute=40, id="kluby_1140pm")
-# Playtomic TODAY: every hour at :45 (hourly observations)
-scheduler.add_job(scheduled_scrape_playtomic, "cron", minute=45, id="playtomic_hourly")
+# Playtomic TODAY: every 30 min at :15 and :45 (captures each 30-min booking window)
+scheduler.add_job(scheduled_scrape_playtomic, "cron", minute="15,45", id="playtomic_30min")
 # Playtomic FUTURE: tomorrow + 7 days at 10:00, 18:00, 23:40
 scheduler.add_job(scheduled_scrape_playtomic_future, "cron", hour=10, minute=0, id="playtomic_future_10am")
 scheduler.add_job(scheduled_scrape_playtomic_future, "cron", hour=18, minute=0, id="playtomic_future_6pm")

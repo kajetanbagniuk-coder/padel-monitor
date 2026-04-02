@@ -285,16 +285,24 @@ def scrape_playtomic_hourly(date_str, club_slug, clubs_dict=None):
         logger.warning(f"Could not determine bookable hours for {club_slug}")
         return None
 
-    # For today: only observe FUTURE hours (current hour +1 onwards).
-    # The current hour's slot is no longer bookable on Playtomic (it already
-    # started), so it disappears from availability — but that does NOT mean
-    # it was booked.  The previous scrape (at XX:45 of the prior hour)
-    # already recorded the correct state when the slot was still in the future.
+    # For today: skip hours whose slots have expired on Playtomic.
+    # Playtomic has 30-min booking windows — at XX:01 the XX:00 slot expires,
+    # at XX:31 the XX:30 slot expires.  The scraper runs at :15 and :45:
+    #
+    #   At XX:15 (minute < 30): the XX:00 slot expired, but the XX:30 slot
+    #     is still bookable → observe from current hour onwards (the :30
+    #     slot still appears in availability if not booked).
+    #
+    #   At XX:45 (minute >= 30): both XX:00 and XX:30 expired → skip
+    #     current hour entirely.  The :15 scrape already captured the
+    #     correct :30 state, and the prior :45 scrape captured the :00 state.
     now = datetime.now()
     today_str = now.strftime("%Y-%m-%d")
     if date_str == today_str:
-        next_hour = now.hour + 1
-        observable_hours = [h for h in schedule_hours if h >= next_hour]
+        if now.minute < 30:
+            observable_hours = [h for h in schedule_hours if h >= now.hour]
+        else:
+            observable_hours = [h for h in schedule_hours if h > now.hour]
     else:
         observable_hours = schedule_hours
 
