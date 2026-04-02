@@ -317,6 +317,9 @@
         <button class="tab-btn" id="btn-next" style="padding:8px 12px;font-size:16px;">&rarr;</button>
     </div>
 
+    <div id="error-banner" style="display:none; background:#e74c3c22; border:1px solid #e74c3c; color:#e74c3c; padding:12px 30px; text-align:center; font-size:14px;">
+        <span id="error-text">Loading failed</span> — the server may be busy scraping. Retrying automatically...
+    </div>
     <div class="main">
         <!-- OVERVIEW: Market-wide view (default) -->
         <div id="view-overview" class="view">
@@ -479,7 +482,7 @@
         }
 
         async function loadClubs() {
-            const resp = await fetch('/api/clubs');
+            const resp = await fetch('/api/clubs', { signal: AbortSignal.timeout(15000) });
             clubsData = await resp.json();
             const cities = [...new Set(Object.values(clubsData).map(c => c.city))].sort();
             cityPicker.innerHTML = '<option value="ALL">All cities (' + Object.keys(clubsData).length + ')</option>';
@@ -921,17 +924,44 @@
         document.getElementById('btn-next').addEventListener('click', () => shiftDate(1));
 
         // ── Init ──
+        function showError(msg) {
+            document.getElementById('error-banner').style.display = 'block';
+            document.getElementById('error-text').textContent = msg;
+        }
+        function hideError() {
+            document.getElementById('error-banner').style.display = 'none';
+        }
+
         async function init() {
-            await loadClubs();
-            await loadDateCoverage();
-            await loadData();
+            try {
+                document.getElementById('status-text').textContent = 'Loading clubs...';
+                await loadClubs();
+                hideError();
+            } catch (e) {
+                console.error('Failed to load clubs:', e);
+                showError('Cannot reach server');
+                document.getElementById('status-text').textContent = 'Retrying in 10s...';
+                setTimeout(init, 10000);
+                return;
+            }
+            try {
+                document.getElementById('status-text').textContent = 'Loading data...';
+                await loadDateCoverage();
+                await loadData();
+                hideError();
+            } catch (e) {
+                console.error('Failed to load data:', e);
+                showError('Data load failed');
+                document.getElementById('status-text').textContent = 'Retrying in 10s...';
+                setTimeout(() => { loadDateCoverage().then(loadData).catch(()=>{}); }, 10000);
+            }
         }
         init();
 
         // Auto-refresh every 5 minutes
         setInterval(() => {
-            loadDateCoverage();
-            loadData();
+            loadDateCoverage().catch(e => console.error('Coverage refresh error:', e));
+            loadData().catch(e => console.error('Data refresh error:', e));
         }, 300000);
     </script>
 </body>

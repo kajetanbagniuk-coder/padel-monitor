@@ -60,10 +60,10 @@ def scheduled_scrape_kluby():
     """Scrape today + 7 days ahead for kluby.org clubs."""
     today = datetime.now()
     dates = [today + timedelta(days=d) for d in range(8)]  # today .. today+7
-    for club_slug, club in CLUBS.items():
-        system = club.get("booking_system", "kluby_org")
-        if system == "playtomic":
-            continue  # Playtomic clubs handled separately
+    kluby_slugs = [slug for slug, c in CLUBS.items()
+                   if c.get("booking_system", "kluby_org") != "playtomic"]
+    logger.info(f"Kluby scrape: {len(kluby_slugs)} clubs x {len(dates)} days")
+    for club_slug in kluby_slugs:
         for date in dates:
             date_str = date.strftime("%Y-%m-%d")
             try:
@@ -72,6 +72,8 @@ def scheduled_scrape_kluby():
                     logger.info(f"  kluby {club_slug} {date_str}: {result['total_booked']} booked, {result['total_income']:.2f} PLN")
             except Exception as e:
                 logger.error(f"  kluby {club_slug} {date_str} failed: {e}")
+            time.sleep(1)  # Rate limiting
+        time.sleep(1)
 
 
 def scheduled_scrape_playtomic():

@@ -99,6 +99,8 @@ def init_db():
     """)
     c.execute("CREATE INDEX IF NOT EXISTS idx_bookings_date_club ON bookings(target_date, club_slug)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_snapshot_date_club ON daily_snapshot(target_date, club_slug)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_snapshot_date_club_snap ON daily_snapshot(club_slug, target_date, snapshot_at DESC)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_snapshot_target_date ON daily_snapshot(target_date)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_ptobs_date_club ON playtomic_observations(target_date, club_slug)")
     conn.commit()
     conn.close()
