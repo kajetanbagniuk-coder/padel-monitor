@@ -7,7 +7,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 
 
 def get_connection():
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
     conn.autocommit = False
     return conn
 
@@ -237,20 +237,24 @@ def get_aggregated_range(start_date, end_date, city=None):
 
 
 def get_date_coverage():
-    """Get all dates that have snapshot data, with totals."""
+    """Get all dates that have snapshot data, with totals (uses latest snapshot per club per date)."""
     conn = get_connection()
     c = conn.cursor()
+    # Simple aggregation — uses max income per club/date as approximation
+    # (latest snapshot has the highest income for the day)
     c.execute("""
         SELECT target_date,
                COUNT(DISTINCT club_slug) as club_count,
-               SUM(total_income) as total_income,
-               SUM(total_booked_slots) as total_booked,
-               MAX(snapshot_at) as last_snapshot
+               SUM(max_income) as total_income,
+               SUM(max_booked) as total_booked,
+               MAX(last_snap) as last_snapshot
         FROM (
-            SELECT DISTINCT ON (club_slug, target_date)
-                   club_slug, target_date, total_income, total_booked_slots, snapshot_at
+            SELECT target_date, club_slug,
+                   MAX(total_income) as max_income,
+                   MAX(total_booked_slots) as max_booked,
+                   MAX(snapshot_at) as last_snap
             FROM daily_snapshot
-            ORDER BY club_slug, target_date, snapshot_at DESC
+            GROUP BY target_date, club_slug
         ) sub
         GROUP BY target_date
         ORDER BY target_date

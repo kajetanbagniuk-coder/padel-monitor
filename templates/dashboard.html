@@ -482,7 +482,7 @@
         }
 
         async function loadClubs() {
-            const resp = await fetch('/api/clubs', { signal: AbortSignal.timeout(15000) });
+            const resp = await fetch('/api/clubs');
             clubsData = await resp.json();
             const cities = [...new Set(Object.values(clubsData).map(c => c.city))].sort();
             cityPicker.innerHTML = '<option value="ALL">All cities (' + Object.keys(clubsData).length + ')</option>';

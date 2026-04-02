@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # ── Scheduler ──────────────────────────────────────────────────────
-scheduler = BackgroundScheduler()
+scheduler = BackgroundScheduler(job_defaults={"misfire_grace_time": 60, "coalesce": True, "max_instances": 1})
 
 
 def scrape_club(club_slug, date_str):
@@ -484,12 +484,28 @@ def _startup_playtomic_prices():
 # ── Initialization (runs under both gunicorn and local dev) ───────
 import threading
 
-init_db()
+try:
+    init_db()
+    logger.info("Database initialized.")
+except Exception as e:
+    logger.error(f"init_db failed (will retry on first request): {e}")
+
 scheduler.start()
-logger.info("App started. Scraping will run on schedule (kluby: 10/18/23:40, playtomic: every :45).")
-# Build price data on startup if missing
-threading.Thread(target=_startup_pricing_scrape, daemon=True).start()
-threading.Thread(target=_startup_playtomic_prices, daemon=True).start()
+logger.info("App started. Scheduler running.")
+
+# Delay startup tasks to let the web server become responsive first
+def _delayed_startup():
+    time.sleep(30)  # Wait 30s before any background DB work
+    try:
+        _startup_pricing_scrape()
+    except Exception as e:
+        logger.error(f"Startup pricing scrape failed: {e}")
+    try:
+        _startup_playtomic_prices()
+    except Exception as e:
+        logger.error(f"Startup playtomic prices failed: {e}")
+
+threading.Thread(target=_delayed_startup, daemon=True).start()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
