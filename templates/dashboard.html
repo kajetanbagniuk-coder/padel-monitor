@@ -312,7 +312,9 @@
         <button class="tab-btn" data-tab="daily">Daily</button>
         <button class="tab-btn" data-tab="weekly">Weekly</button>
         <button class="tab-btn" data-tab="monthly">Monthly</button>
+        <button class="tab-btn" id="btn-prev" style="padding:8px 12px;font-size:16px;">&larr;</button>
         <input type="date" id="date-picker" />
+        <button class="tab-btn" id="btn-next" style="padding:8px 12px;font-size:16px;">&rarr;</button>
     </div>
 
     <div class="main">
@@ -347,7 +349,7 @@
                             <th>City</th>
                             <th>Src</th>
                             <th>Courts</th>
-                            <th>Booked</th>
+                            <th>Booked Hours</th>
                             <th>Income (PLN)</th>
                         </tr>
                     </thead>
@@ -441,6 +443,23 @@
         function fmtK(n) {
             if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
             return fmt(n);
+        }
+        function slotToHours(slots, clubSlug) {
+            // Playtomic/both: 1 slot = 1 hour; kluby_org: 1 slot = 0.5 hour
+            const sys = clubsData[clubSlug]?.booking_system;
+            if (sys === 'playtomic' || sys === 'both') return slots;
+            return slots * 0.5;
+        }
+        function fmtHours(h) {
+            return Number.isInteger(h) ? h + 'h' : h.toFixed(1) + 'h';
+        }
+        function shiftDate(days) {
+            const d = new Date(currentDate);
+            d.setDate(d.getDate() + days);
+            currentDate = d.toISOString().slice(0, 10);
+            datePicker.value = currentDate;
+            if (currentTab === 'overview') renderTimeline();
+            loadData();
         }
 
         // ── Club picker ──
@@ -553,6 +572,14 @@
             const playtomicClubs = clubs.filter(c => c.booking_system === 'playtomic' || c.booking_system === 'both').length;
             const klubyClubs = clubs.filter(c => c.booking_system === 'kluby_org' || c.booking_system === 'both').length;
 
+            // Convert total booked to hours (rough: assume mix of sources)
+            // Sum hours per club based on their booking system
+            let totalHours = 0;
+            clubs.forEach(c => {
+                const sys = c.booking_system;
+                totalHours += (sys === 'playtomic' || sys === 'both') ? (c.booked || 0) : (c.booked || 0) * 0.5;
+            });
+
             document.getElementById('ov-stats').innerHTML = `
                 <div class="stat-card">
                     <div class="stat-value">${clubs.length}</div>
@@ -563,8 +590,8 @@
                     <div class="stat-label">Total Courts</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-value">${totalBooked}</div>
-                    <div class="stat-label">Total Booked Slots</div>
+                    <div class="stat-value">${fmtHours(totalHours)}</div>
+                    <div class="stat-label">Total Booked Hours</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-value">${fmt(avgPerClub)}</div>
@@ -593,7 +620,7 @@
                         <td>${club.city}</td>
                         <td><span class="sys-badge" style="color:${sysColor};">${sysLabel}</span></td>
                         <td>${club.courts}</td>
-                        <td>${club.booked || 0}</td>
+                        <td>${fmtHours((club.booking_system === 'playtomic' || club.booking_system === 'both') ? (club.booked || 0) : (club.booked || 0) * 0.5)}</td>
                         <td class="income">${fmt(club.income)}</td>
                     </tr>`;
             });
@@ -608,11 +635,12 @@
                 citySection.style.display = '';
                 const cityMap = {};
                 clubs.forEach(c => {
-                    if (!cityMap[c.city]) cityMap[c.city] = { income: 0, clubs: 0, courts: 0, booked: 0 };
+                    if (!cityMap[c.city]) cityMap[c.city] = { income: 0, clubs: 0, courts: 0, hours: 0 };
                     cityMap[c.city].income += c.income;
                     cityMap[c.city].clubs += 1;
                     cityMap[c.city].courts += c.courts || 0;
-                    cityMap[c.city].booked += c.booked || 0;
+                    const h = (c.booking_system === 'playtomic' || c.booking_system === 'both') ? (c.booked || 0) : (c.booked || 0) * 0.5;
+                    cityMap[c.city].hours += h;
                 });
                 const citySorted = Object.entries(cityMap).sort((a, b) => b[1].income - a[1].income);
                 let cityHtml = '';
@@ -621,7 +649,7 @@
                         <div class="city-card">
                             <div class="city-name">${city}</div>
                             <div class="city-income">${fmt(info.income)} PLN</div>
-                            <div class="city-meta">${info.clubs} clubs | ${info.courts} courts | ${info.booked} booked</div>
+                            <div class="city-meta">${info.clubs} clubs | ${info.courts} courts | ${fmtHours(info.hours)} booked</div>
                         </div>`;
                 }
                 document.getElementById('ov-city-cards').innerHTML = cityHtml;
@@ -691,33 +719,44 @@
 
             const booked = data.total_booked_slots || 0;
             const numCourts = clubsData[currentClub]?.courts || 8;
-            const totalSlots = numCourts * 33;
-            const occupancy = totalSlots > 0 ? ((booked / totalSlots) * 100).toFixed(1) : 0;
+            const bookedHours = slotToHours(booked, currentClub);
+            // Total available hours per court: kluby=16.5h (6:00-22:30), playtomic=varies
+            const sys = clubsData[currentClub]?.booking_system;
+            const hoursPerCourt = (sys === 'playtomic' || sys === 'both') ? 16 : 16.5;
+            const totalHours = numCourts * hoursPerCourt;
+            const occupancy = totalHours > 0 ? ((bookedHours / totalHours) * 100).toFixed(1) : 0;
             const avgPerCourt = numCourts > 0 ? ((data.total_income || 0) / numCourts).toFixed(2) : 0;
 
             document.getElementById('daily-stats').innerHTML = `
-                <div class="stat-card"><div class="stat-value">${booked}</div><div class="stat-label">Booked Slots</div></div>
+                <div class="stat-card"><div class="stat-value">${fmtHours(bookedHours)}</div><div class="stat-label">Booked Hours</div></div>
                 <div class="stat-card"><div class="stat-value">${occupancy}%</div><div class="stat-label">Occupancy Rate</div></div>
                 <div class="stat-card"><div class="stat-value">${fmt(avgPerCourt)}</div><div class="stat-label">Avg per Court (PLN)</div></div>
                 <div class="stat-card"><div class="stat-value">${numCourts}</div><div class="stat-label">Courts</div></div>`;
 
             const courtsData = data.courts_data || {};
-            const courtsHtml = Object.entries(courtsData).sort().map(([name, info]) => `
+            const courtsHtml = Object.entries(courtsData).sort().map(([name, info]) => {
+                const bH = slotToHours(info.booked, currentClub);
+                const tH = slotToHours(info.booked + info.available, currentClub);
+                return `
                 <div class="court-card">
                     <div class="court-name">${name}</div>
                     <div class="court-income">${fmt(info.income)} PLN</div>
-                    <div class="court-slots">${info.booked} booked / ${info.booked + info.available} total</div>
-                </div>`).join('');
+                    <div class="court-slots">${fmtHours(bH)} booked / ${fmtHours(tH)} total</div>
+                </div>`;
+            }).join('');
             document.getElementById('courts-grid').innerHTML = courtsHtml || '<div class="no-data">No court data</div>';
 
             const histResp = await fetch('/api/daily-history?date=' + currentDate + '&club=' + currentClub);
             const snapshots = await histResp.json();
-            const snapHtml = snapshots.map(s => `
+            const snapHtml = snapshots.map(s => {
+                const sH = slotToHours(s.total_booked_slots, currentClub);
+                return `
                 <div class="snapshot-card">
                     <div class="snap-time">${s.snapshot_at.slice(11, 16)}</div>
                     <div class="snap-income">${fmt(s.total_income)} PLN</div>
-                    <div class="snap-slots">${s.total_booked_slots} slots</div>
-                </div>`).join('');
+                    <div class="snap-slots">${fmtHours(sH)} booked</div>
+                </div>`;
+            }).join('');
             document.getElementById('snapshot-timeline').innerHTML = snapHtml || '<div class="no-data">No snapshots</div>';
 
             loadClubCard();
@@ -876,6 +915,10 @@
         document.getElementById('btn-back-daily').addEventListener('click', () => switchTab('overview'));
         document.getElementById('btn-back-weekly').addEventListener('click', () => switchTab('overview'));
         document.getElementById('btn-back-monthly').addEventListener('click', () => switchTab('overview'));
+
+        // Date navigation arrows
+        document.getElementById('btn-prev').addEventListener('click', () => shiftDate(-1));
+        document.getElementById('btn-next').addEventListener('click', () => shiftDate(1));
 
         // ── Init ──
         async function init() {
