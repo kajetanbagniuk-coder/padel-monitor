@@ -285,12 +285,16 @@ def scrape_playtomic_hourly(date_str, club_slug, clubs_dict=None):
         logger.warning(f"Could not determine bookable hours for {club_slug}")
         return None
 
-    # Current hour — only observe from this hour onwards for today
+    # For today: only observe FUTURE hours (current hour +1 onwards).
+    # The current hour's slot is no longer bookable on Playtomic (it already
+    # started), so it disappears from availability — but that does NOT mean
+    # it was booked.  The previous scrape (at XX:45 of the prior hour)
+    # already recorded the correct state when the slot was still in the future.
     now = datetime.now()
     today_str = now.strftime("%Y-%m-%d")
     if date_str == today_str:
-        current_hour = now.hour
-        observable_hours = [h for h in schedule_hours if h >= current_hour]
+        next_hour = now.hour + 1
+        observable_hours = [h for h in schedule_hours if h >= next_hour]
     else:
         observable_hours = schedule_hours
 
