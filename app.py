@@ -16,10 +16,13 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from database import (init_db, get_latest_snapshot_for_date, get_income_range,
                       get_all_snapshots_for_date, get_club_pricing, get_all_club_pricing,
-                      get_aggregated_daily, get_aggregated_range, get_date_coverage)
+                      get_aggregated_daily, get_aggregated_range, get_date_coverage,
+                      save_discovered_clubs, get_discovered_clubs,
+                      update_discovered_club_status)
 from scraper import scrape_date
 from playtomic_scraper import scrape_playtomic_hourly, build_all_price_maps
 from pricing_scraper import scrape_club_pricing, scrape_all_pricing
+from discovery import discover_new_clubs
 from clubs import CLUBS, DEFAULT_CLUB
 
 # Setup logging
@@ -147,6 +150,62 @@ def scheduled_playtomic_price_maps():
         logger.error(f"Playtomic price map rebuild failed: {e}")
 
 
+def merge_discovered_clubs_into_registry():
+    """Load 'active' discovered_clubs rows into the in-memory CLUBS dict.
+
+    Called at app startup and after each successful discovery run so newly
+    found clubs get picked up by the existing scrapers on the next
+    scheduled cycle — no code deploy required.
+
+    Static entries in CLUBS always win (never overwritten by DB).
+    """
+    try:
+        rows = get_discovered_clubs(status="active")
+    except Exception as e:
+        logger.error(f"Could not load discovered clubs: {e}")
+        return 0
+    added = 0
+    for row in rows:
+        slug = row["slug"]
+        if slug in CLUBS:
+            continue
+        entry = {
+            "name": row["name"],
+            "slug": slug,
+            "courts": row["courts"] or 0,
+            "city": row["city"] or "",
+            "booking_system": row["booking_system"],
+        }
+        if row["playtomic_id"]:
+            entry["playtomic_id"] = row["playtomic_id"]
+            entry["playtomic_slug"] = row["playtomic_slug"] or row["playtomic_id"]
+        CLUBS[slug] = entry
+        added += 1
+    if added:
+        logger.info(f"Loaded {added} discovered clubs into registry")
+    return added
+
+
+def scheduled_club_discovery():
+    """Weekly discovery of new padel clubs on Playtomic and kluby.org.
+
+    Writes new clubs to discovered_clubs table and merges them into the
+    live CLUBS registry so they're scraped from the next scheduled cycle.
+    """
+    logger.info("Starting weekly club discovery...")
+    try:
+        new = discover_new_clubs(CLUBS)
+        if not new:
+            logger.info("Club discovery: no new clubs found")
+            return
+        inserted = save_discovered_clubs(new)
+        logger.info(f"Club discovery: inserted {inserted} new clubs into DB")
+        if inserted:
+            merge_discovered_clubs_into_registry()
+    except Exception as e:
+        logger.error(f"Club discovery failed: {e}")
+
+
 # Kluby.org: today + 7 days ahead at 10:00, 18:00, 23:40
 scheduler.add_job(scheduled_scrape_kluby, "cron", hour=10, minute=0, id="kluby_10am")
 scheduler.add_job(scheduled_scrape_kluby, "cron", hour=18, minute=0, id="kluby_6pm")
@@ -161,6 +220,8 @@ scheduler.add_job(scheduled_scrape_playtomic_future, "cron", hour=23, minute=40,
 scheduler.add_job(scheduled_pricing_scrape, "cron", day_of_week="mon", hour=3, minute=0, id="pricing_weekly")
 # Weekly Playtomic price maps: Monday 4 AM
 scheduler.add_job(scheduled_playtomic_price_maps, "cron", day_of_week="mon", hour=4, minute=0, id="playtomic_prices_weekly")
+# Weekly club discovery: Sunday 5 AM — scan Playtomic + kluby.org for new padel clubs
+scheduler.add_job(scheduled_club_discovery, "cron", day_of_week="sun", hour=5, minute=0, id="club_discovery_weekly")
 
 
 # ── Routes ─────────────────────────────────────────────────────────
@@ -191,6 +252,48 @@ def api_scrape_now():
     except Exception as e:
         logger.error(f"Scrape error for {club_slug}: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/discovered-clubs")
+def api_discovered_clubs():
+    """List all discovered clubs (new finds from weekly discovery runs).
+
+    Query params:
+      status: filter by status (e.g. active, ignored). Omit for all.
+    """
+    status = request.args.get("status")
+    rows = get_discovered_clubs(status=status)
+    return jsonify({"count": len(rows), "clubs": rows})
+
+
+@app.route("/api/discover-now")
+def api_discover_now():
+    """Manually trigger a discovery run (background). Safe to call anytime."""
+    import threading
+    threading.Thread(target=scheduled_club_discovery, daemon=True).start()
+    return jsonify({"status": "ok", "message": "Discovery started in background"})
+
+
+@app.route("/api/discovered-clubs/<slug>/ignore")
+def api_ignore_discovered_club(slug):
+    """Mark a discovered club as 'ignored' so it stops being scraped."""
+    ok = update_discovered_club_status(slug, "ignored")
+    if ok and slug in CLUBS:
+        # Only drop from registry if it came from discovered_clubs
+        # (static entries in clubs.py stay regardless)
+        from clubs import CLUBS as STATIC_CLUBS
+        if slug not in STATIC_CLUBS:
+            del CLUBS[slug]
+    return jsonify({"status": "ok" if ok else "not found"})
+
+
+@app.route("/api/discovered-clubs/<slug>/activate")
+def api_activate_discovered_club(slug):
+    """Re-activate a previously ignored discovered club."""
+    ok = update_discovered_club_status(slug, "active")
+    if ok:
+        merge_discovered_clubs_into_registry()
+    return jsonify({"status": "ok" if ok else "not found"})
 
 
 @app.route("/api/cleanup-zero-snapshots")
@@ -528,6 +631,11 @@ try:
     logger.info("Database initialized.")
 except Exception as e:
     logger.error(f"init_db failed (will retry on first request): {e}")
+
+try:
+    merge_discovered_clubs_into_registry()
+except Exception as e:
+    logger.error(f"merge_discovered_clubs_into_registry failed: {e}")
 
 scheduler.start()
 logger.info("App started. Scheduler running.")

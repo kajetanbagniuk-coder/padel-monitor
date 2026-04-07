@@ -97,6 +97,19 @@ def init_db():
             PRIMARY KEY (club_slug, court_type, day_type, hour)
         )
     """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS discovered_clubs (
+            slug TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            city TEXT,
+            courts INTEGER,
+            booking_system TEXT NOT NULL,
+            playtomic_id TEXT,
+            playtomic_slug TEXT,
+            discovered_at TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active'
+        )
+    """)
     c.execute("CREATE INDEX IF NOT EXISTS idx_bookings_date_club ON bookings(target_date, club_slug)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_snapshot_date_club ON daily_snapshot(target_date, club_slug)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_snapshot_date_club_snap ON daily_snapshot(club_slug, target_date, snapshot_at DESC)")
@@ -418,6 +431,66 @@ def get_club_pricing(club_slug):
     row = _dictrow(c)
     conn.close()
     return row
+
+
+def save_discovered_clubs(new_clubs):
+    """Insert new discovered clubs. ON CONFLICT DO NOTHING (idempotent).
+
+    Returns count of rows actually inserted.
+    """
+    if not new_clubs:
+        return 0
+    conn = get_connection()
+    c = conn.cursor()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    inserted = 0
+    for club in new_clubs:
+        c.execute("""
+            INSERT INTO discovered_clubs
+                (slug, name, city, courts, booking_system,
+                 playtomic_id, playtomic_slug, discovered_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (slug) DO NOTHING
+        """, (
+            club["slug"], club["name"], club.get("city", ""),
+            club.get("courts", 0), club["booking_system"],
+            club.get("playtomic_id"), club.get("playtomic_slug"), now,
+        ))
+        if c.rowcount > 0:
+            inserted += 1
+    conn.commit()
+    conn.close()
+    return inserted
+
+
+def get_discovered_clubs(status=None):
+    """Return discovered clubs as list of dicts, optionally filtered by status."""
+    conn = get_connection()
+    c = conn.cursor()
+    if status is not None:
+        c.execute(
+            "SELECT * FROM discovered_clubs WHERE status = %s ORDER BY discovered_at DESC",
+            (status,),
+        )
+    else:
+        c.execute("SELECT * FROM discovered_clubs ORDER BY discovered_at DESC")
+    rows = _dictrows(c)
+    conn.close()
+    return rows
+
+
+def update_discovered_club_status(slug, status):
+    """Set the status of a discovered club (e.g. 'active' or 'ignored')."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute(
+        "UPDATE discovered_clubs SET status = %s WHERE slug = %s",
+        (status, slug),
+    )
+    changed = c.rowcount
+    conn.commit()
+    conn.close()
+    return changed > 0
 
 
 def get_all_club_pricing():
