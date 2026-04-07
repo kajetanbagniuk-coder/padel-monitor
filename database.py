@@ -125,8 +125,32 @@ def save_scrape(target_date, slots, club_slug="loba-padel"):
 
 
 def save_daily_snapshot(target_date, total_booked, total_income, courts_json, club_slug="loba-padel"):
+    """Save a daily snapshot.
+
+    Defensive: if asked to save a zero snapshot (0 booked / 0 income) but a
+    non-zero snapshot already exists for this date+club, refuse — almost
+    certainly a scraper failure (empty API response, wrong platform, etc.)
+    and saving it would clobber real data via "latest snapshot wins"
+    aggregation. A legitimately empty day is saved the first time because
+    no existing snapshot exists yet.
+    """
     conn = get_connection()
     c = conn.cursor()
+    if total_booked == 0 and total_income == 0:
+        c.execute("""
+            SELECT COALESCE(MAX(total_income), 0), COALESCE(MAX(total_booked_slots), 0)
+            FROM daily_snapshot
+            WHERE target_date = %s AND club_slug = %s
+        """, (target_date, club_slug))
+        existing_max_income, existing_max_booked = c.fetchone()
+        if existing_max_income > 0 or existing_max_booked > 0:
+            conn.close()
+            import logging
+            logging.getLogger(__name__).warning(
+                f"Refusing to save zero snapshot for {club_slug} {target_date}: "
+                f"existing max is {existing_max_booked} booked / {existing_max_income:.2f} PLN"
+            )
+            return
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     c.execute("""
         INSERT INTO daily_snapshot (target_date, club_slug, snapshot_at, total_booked_slots, total_income, courts_data)

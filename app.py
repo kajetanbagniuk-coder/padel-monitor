@@ -57,12 +57,20 @@ def scrape_club(club_slug, date_str):
 
 
 def scheduled_scrape_kluby():
-    """Scrape today + 7 days ahead for kluby.org clubs."""
+    """Scrape today + 7 days ahead for PURE kluby.org clubs only.
+
+    IMPORTANT: "both" clubs are excluded. They use Playtomic as primary
+    (has real prices and real availability). Their kluby.org grafik is
+    usually empty or stale, so scraping it would return 0 bookings and
+    clobber the good Playtomic snapshot via the "latest snapshot wins"
+    logic in get_aggregated_daily. This was the cause of the recurring
+    "yesterday's Playtomic data disappeared" bug.
+    """
     today = datetime.now()
     dates = [today + timedelta(days=d) for d in range(8)]  # today .. today+7
     kluby_slugs = [slug for slug, c in CLUBS.items()
-                   if c.get("booking_system", "kluby_org") != "playtomic"]
-    logger.info(f"Kluby scrape: {len(kluby_slugs)} clubs x {len(dates)} days")
+                   if c.get("booking_system", "kluby_org") == "kluby_org"]
+    logger.info(f"Kluby scrape: {len(kluby_slugs)} clubs x {len(dates)} days (pure kluby_org only)")
     for club_slug in kluby_slugs:
         for date in dates:
             date_str = date.strftime("%Y-%m-%d")
@@ -182,6 +190,37 @@ def api_scrape_now():
         return jsonify({"status": "error", "message": "Scrape returned no data"}), 500
     except Exception as e:
         logger.error(f"Scrape error for {club_slug}: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/cleanup-zero-snapshots")
+def api_cleanup_zero_snapshots():
+    """Delete 0/0 snapshots where a non-zero snapshot exists for the same date+club.
+
+    This cleans up the damage from the pre-fix kluby scraper that was
+    writing zeros for "both" clubs and clobbering Playtomic data.
+    Safe / idempotent.
+    """
+    try:
+        from database import get_connection
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("""
+            DELETE FROM daily_snapshot
+            WHERE total_booked_slots = 0 AND total_income = 0
+              AND EXISTS (
+                  SELECT 1 FROM daily_snapshot s2
+                  WHERE s2.target_date = daily_snapshot.target_date
+                    AND s2.club_slug = daily_snapshot.club_slug
+                    AND (s2.total_booked_slots > 0 OR s2.total_income > 0)
+              )
+        """)
+        deleted = c.rowcount
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "ok", "deleted_snapshots": deleted})
+    except Exception as e:
+        logger.error(f"cleanup-zero-snapshots failed: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
