@@ -428,10 +428,35 @@
     <script>
         const DAYS_PL = ['Pon', 'Wt', 'Sr', 'Czw', 'Pt', 'Sob', 'Nd'];
 
-        let currentTab = 'overview';
-        let currentDate = new Date().toISOString().slice(0, 10);
-        let currentClub = null;
-        let currentCity = 'ALL';
+        // ── Persisted UI state ──
+        // Preserves the active tab / selected date / club / city across date
+        // changes and page reloads, so users don't get kicked back to Overview
+        // every time they change something.
+        const STATE_KEY = 'padelMonitorUIState';
+        const todayStr = () => new Date().toISOString().slice(0, 10);
+        function loadPersistedState() {
+            try {
+                const raw = localStorage.getItem(STATE_KEY);
+                if (!raw) return {};
+                return JSON.parse(raw) || {};
+            } catch (e) { return {}; }
+        }
+        function savePersistedState() {
+            try {
+                localStorage.setItem(STATE_KEY, JSON.stringify({
+                    tab: currentTab,
+                    date: currentDate,
+                    club: currentClub,
+                    city: currentCity,
+                }));
+            } catch (e) { /* quota / private mode — silently ignore */ }
+        }
+        const _persisted = loadPersistedState();
+
+        let currentTab = _persisted.tab || 'overview';
+        let currentDate = _persisted.date || todayStr();
+        let currentClub = _persisted.club || null;
+        let currentCity = _persisted.city || 'ALL';
         let clubsData = {};
         let dateCoverage = [];
 
@@ -462,6 +487,7 @@
             currentDate = d.toISOString().slice(0, 10);
             datePicker.value = currentDate;
             if (currentTab === 'overview') renderTimeline();
+            savePersistedState();
             loadData();
         }
 
@@ -551,7 +577,11 @@
             currentDate = dateStr;
             datePicker.value = dateStr;
             renderTimeline();
-            loadOverviewData();
+            // Dispatch via loadData() so the current tab is preserved — clicking
+            // a timeline bar while in Daily/Weekly/Monthly view should refresh
+            // that view for the new date, not kick the user back to Overview.
+            savePersistedState();
+            loadData();
         }
 
         // ── Overview (market-wide) ──
@@ -665,11 +695,13 @@
         function drillIntoClub(slug) {
             currentClub = slug;
             clubPicker.value = slug;
+            savePersistedState();
             switchTab('daily');
         }
 
         function switchTab(tab) {
             currentTab = tab;
+            savePersistedState();
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
             if (btn) btn.classList.add('active');
@@ -887,12 +919,14 @@
         // ── Event listeners ──
         cityPicker.addEventListener('change', () => {
             currentCity = cityPicker.value;
+            savePersistedState();
             populateClubPicker();
             loadData();
         });
 
         clubPicker.addEventListener('change', () => {
             currentClub = clubPicker.value;
+            savePersistedState();
             if (currentClub && currentTab !== 'overview') {
                 document.getElementById('header-title').textContent =
                     (clubsData[currentClub]?.name || 'Club') + ' \u2014 Income Monitor';
@@ -911,6 +945,7 @@
                 currentDate = datePicker.value;
             }
             if (currentTab === 'overview') renderTimeline();
+            savePersistedState();
             loadData();
         });
 
@@ -944,10 +979,19 @@
                 setTimeout(init, 10000);
                 return;
             }
+            // Restore persisted city selection in the picker (clubsData is loaded now).
+            if (currentCity && cityPicker.querySelector(`option[value="${currentCity}"]`)) {
+                cityPicker.value = currentCity;
+                populateClubPicker();
+            }
             try {
                 document.getElementById('status-text').textContent = 'Loading data...';
                 await loadDateCoverage();
-                await loadData();
+                // Restore persisted tab/club — switchTab sets the correct view
+                // visibility, header, date picker type, and fires loadData().
+                // If the saved tab is not 'overview' but there's no saved club
+                // yet, switchTab will pick a sensible default.
+                switchTab(currentTab);
                 hideError();
             } catch (e) {
                 console.error('Failed to load data:', e);
